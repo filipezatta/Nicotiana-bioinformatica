@@ -1,0 +1,17 @@
+#como iniciar ambiente mamba
+
+mamba activate smk
+
+#como modificar arquivo snakefile
+
+nano workflow/snakefile
+
+#como rodar o snakefile
+
+snakemake -c1 -s workflow/Snakefile
+
+#gerar diagramas
+snakemake --forceall --dag | dot -Tpdf > dag.pdf
+
+snakemake --forceall --rulegraph | dot -Tpdf > rulegraph.pdf
+

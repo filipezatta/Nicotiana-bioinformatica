@@ -1,0 +1,16 @@
+# Pastas de Dados e Resultados (NUNCA versionar)
+data/
+results/
+
+# Logs e Arquivos Ocultos do Snakemake
+.snakemake/
+*.log
+
+# Arquivos temporários do Sistema/Python
+__pycache__/
+*.pyc
+.DS_Store
+
+# Opcional: Arquivos de teste avulsos que você tenha criado
+teste.fq
+*.sam

@@ -1,0 +1,9 @@
+genotypers:
+- freebayes
+- gatk
+qc_steps:
+  raw_reads_qc: true
+  processed_reads_qc: true
+  mapping_qc: true
+  sorting_qc: true
+  variant_call_qc: true

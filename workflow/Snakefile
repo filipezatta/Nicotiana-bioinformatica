@@ -1,0 +1,115 @@
+configfile: "config/config.yaml"
+
+# --- O NOVO RADAR ---
+REFERENCES, = glob_wildcards("data/raw/reference/{ref}/{ref}.fasta")
+OUTGROUPS, = glob_wildcards("data/raw/outgroup/{outgroup}/{outgroup}_1.fastq")
+FOCALS, = glob_wildcards("data/raw/focal/{focal}/{focal}_1.fastq")
+
+GENOTYPERS = config["genotypers"]
+
+# --- REGRA ALVO (12 ITERAÇÕES POR FOCAL) ---
+rule all:
+    input:
+        expand("results/vcf/{focal}-{outgroup}-{reference}-{genotyper}.vcf",
+               focal=FOCALS,
+               outgroup=OUTGROUPS,
+               reference=REFERENCES,
+               genotyper=GENOTYPERS)
+
+# --- INDEXAÇÕES DA REFERÊNCIA ---
+rule indexar_bwa:
+    input: "data/raw/reference/{reference}/{reference}.fasta"
+    output:
+        bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
+        pac="data/raw/reference/{reference}/{reference}.fasta.pac",
+        ann="data/raw/reference/{reference}/{reference}.fasta.ann",
+        amb="data/raw/reference/{reference}/{reference}.fasta.amb",
+        sa="data/raw/reference/{reference}/{reference}.fasta.sa"
+    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 bwa index {input}"
+
+rule indexar_samtools_fai:
+    input: "data/raw/reference/{reference}/{reference}.fasta"
+    output: "data/raw/reference/{reference}/{reference}.fasta.fai"
+    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 samtools faidx {input}"
+
+rule criar_dicionario_gatk:
+    input: "data/raw/reference/{reference}/{reference}.fasta"
+    output: "data/raw/reference/{reference}/{reference}.dict"
+    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) broadinstitute/gatk:4.4.0.0 gatk CreateSequenceDictionary -R {input} -O {output}"
+
+# --- MAPEAMENTOS INDEPENDENTES ---
+rule mapeamento_focal:
+    input:
+        fasta="data/raw/reference/{reference}/{reference}.fasta",
+        bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
+        r1="data/raw/focal/{focal}/{focal}_1.fastq",
+        r2="data/raw/focal/{focal}/{focal}_2.fastq"
+    output:
+        bam="results/mapping/focal/{reference}-{focal}.sorted.bam"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
+        bwa mem -R "@RG\\tID:{wildcards.focal}\\tSM:{wildcards.focal}\\tPL:ILLUMINA" {input.fasta} {input.r1} {input.r2} | \
+        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
+        samtools sort -o {output.bam} -
+        """
+
+rule mapeamento_outgroup:
+    input:
+        fasta="data/raw/reference/{reference}/{reference}.fasta",
+        bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
+        r1="data/raw/outgroup/{outgroup}/{outgroup}_1.fastq",
+        r2="data/raw/outgroup/{outgroup}/{outgroup}_2.fastq"
+    output:
+        bam="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
+        bwa mem -R "@RG\\tID:{wildcards.outgroup}\\tSM:{wildcards.outgroup}\\tPL:ILLUMINA" {input.fasta} {input.r1} {input.r2} | \
+        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
+        samtools sort -o {output.bam} -
+        """
+
+# --- INDEXAÇÕES DOS BAMS ---
+rule indexar_bam_focal:
+    input: "results/mapping/focal/{reference}-{focal}.sorted.bam"
+    output: "results/mapping/focal/{reference}-{focal}.sorted.bam.bai"
+    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 samtools index {input}"
+
+rule indexar_bam_outgroup:
+    input: "results/mapping/outgroup/{reference}-{outgroup}.sorted.bam"
+    output: "results/mapping/outgroup/{reference}-{outgroup}.sorted.bam.bai"
+    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 samtools index {input}"
+
+# --- GENOTIPAGEM CONJUNTA (JOINT CALLING) ---
+rule freebayes:
+    input:
+        fasta="data/raw/reference/{reference}/{reference}.fasta",
+        bam_foc="results/mapping/focal/{reference}-{focal}.sorted.bam",
+        bai_foc="results/mapping/focal/{reference}-{focal}.sorted.bam.bai",
+        bam_out="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam",
+        bai_out="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam.bai"
+    output:
+        vcf="results/vcf/{focal}-{outgroup}-{reference}-freebayes.vcf"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/freebayes:1.3.6 \
+        freebayes -f {input.fasta} {input.bam_foc} {input.bam_out} > {output.vcf}
+        """
+
+rule gatk_haplotype_caller:
+    input:
+        fasta="data/raw/reference/{reference}/{reference}.fasta",
+        fai="data/raw/reference/{reference}/{reference}.fasta.fai",
+        dict="data/raw/reference/{reference}/{reference}.dict",
+        bam_foc="results/mapping/focal/{reference}-{focal}.sorted.bam",
+        bai_foc="results/mapping/focal/{reference}-{focal}.sorted.bam.bai",
+        bam_out="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam",
+        bai_out="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam.bai"
+    output:
+        vcf="results/vcf/{focal}-{outgroup}-{reference}-gatk.vcf"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) broadinstitute/gatk:4.4.0.0 \
+        gatk HaplotypeCaller -R {input.fasta} -I {input.bam_foc} -I {input.bam_out} -O {output.vcf}
+        """
