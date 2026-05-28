@@ -12,6 +12,5 @@ snakemake -c1 -s workflow/Snakefile
 
 #gerar diagramas
 snakemake --forceall --dag | dot -Tpdf > dag.pdf
-
 snakemake --forceall --rulegraph | dot -Tpdf > rulegraph.pdf
 
