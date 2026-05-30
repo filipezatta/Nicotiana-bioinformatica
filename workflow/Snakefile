@@ -1,9 +1,9 @@
 configfile: "config/config.yaml"
 
 # --- O NOVO RADAR ---
-REFERENCES, = glob_wildcards("data/raw/reference/{ref}/{ref}.fasta")
-OUTGROUPS, = glob_wildcards("data/raw/outgroup/{outgroup}/{outgroup}_1.fastq")
-FOCALS, = glob_wildcards("data/raw/focal/{focal}/{focal}_1.fastq")
+REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
+OUTGROUPS = glob_wildcards("data/raw/outgroup/{outgroup}/{outgroup_file}_1.fastq").outgroup
+FOCALS = glob_wildcards("data/raw/focal/{focal}/{focal_file}_1.fastq").focal
 
 GENOTYPERS = config["genotypers"]
 
