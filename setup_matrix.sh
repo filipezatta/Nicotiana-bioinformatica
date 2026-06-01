@@ -16,7 +16,7 @@ curl -sL -o S_eubayanus.fa.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/001/
 curl -sL -o S_uvarum.fa.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/002/214/985/GCA_002214985.1_ASM221498v1/GCA_002214985.1_ASM221498v1_genomic.fna.gz"
 curl -sL -o C_glabrata.fa.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/545/GCF_000002545.3_ASM254v2/GCF_000002545.3_ASM254v2_genomic.fna.gz"
 
-echo "Fragmentando genomas (Python lendo o .gz diretamente)..."
+echo "Fragmentando genomas (Python decodificando binario)..."
 
 cat << 'EOF' > simular_reads.py
 import sys, random, gzip
@@ -28,9 +28,9 @@ read_len = 100
 
 print(f"Gerando reads para {out_prefix}...")
 
-# Abre o GZ diretamente sem precisar de gunzip no Linux
-with gzip.open(fasta_in, 'rt') as f:
-    seq = "".join([l.strip() for l in f if not l.startswith(">")])
+# Lê em binário ('rb'), compara com b">" e decodifica para string
+with gzip.open(fasta_in, 'rb') as f:
+    seq = "".join([l.decode('utf-8').strip() for l in f if not l.startswith(b">")])
     
 seq_len = len(seq)
 q = "I" * read_len
@@ -48,7 +48,7 @@ with open(f"{out_prefix}_1.fastq", "w") as f1, open(f"{out_prefix}_2.fastq", "w"
             f2.write(f"@MSEQ:1:FC:{i}/2\n{r2}\n+\n{q}\n")
 EOF
 
-# Executa as simulações lendo o .gz
+# Executa as simulações
 python3 simular_reads.py S_mikatae.fa.gz data/raw/focal/Saccharomyces_mikatae/Saccharomyces_mikatae
 python3 simular_reads.py S_eubayanus.fa.gz data/raw/focal/Saccharomyces_eubayanus/Saccharomyces_eubayanus
 python3 simular_reads.py S_uvarum.fa.gz data/raw/outgroup/Saccharomyces_uvarum/Saccharomyces_uvarum
