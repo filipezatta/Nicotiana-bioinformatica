@@ -194,7 +194,7 @@ rule pca_plink:
         """
         # PLINK vai ler o VCF e calcular as coordenadas X e Y de cada planta para o PCA
         docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/plink:1.90b6.21 \
-        plink --vcf {input.vcf} --double-id --allow-extra-chr --set-missing-var-ids @:# \
+        plink --vcf-half-call m --vcf {input.vcf} --double-id --allow-extra-chr --set-missing-var-ids @:# \
         --pca --out {params.out_prefix}
         """
 rule plot_pca:
