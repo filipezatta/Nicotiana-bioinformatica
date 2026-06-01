@@ -10,11 +10,15 @@ GENOTYPERS = config["genotypers"]
 # --- REGRA ALVO (12 ITERAÇÕES POR FOCAL) ---
 rule all:
     input:
-        expand("results/vcf/{focal}-{outgroup}-{reference}-{genotyper}.vcf",
-               focal=FOCALS,
-               outgroup=OUTGROUPS,
-               reference=REFERENCES,
-               genotyper=GENOTYPERS)
+        expand("results/vcf_filtered/{focal}-{outgroup}-{reference}-{genotyper}.filtered.vcf",
+               focal=FOCALS, outgroup=OUTGROUPS, reference=REFERENCES, genotyper=GENOTYPERS),
+        "results/qc/multiqc_report.html",
+        expand("results/qc/vcf_stats/{focal}-{outgroup}-{reference}-{genotyper}.vchk",
+               focal=FOCALS, outgroup=OUTGROUPS, reference=REFERENCES, genotyper=GENOTYPERS),
+        expand("results/pca/{focal}-{outgroup}-{reference}-{genotyper}.eigenvec",
+               focal=FOCALS, outgroup=OUTGROUPS, reference=REFERENCES, genotyper=GENOTYPERS),
+        expand("results/qc/pca_plots/{focal}-{outgroup}-{reference}-{genotyper}_pca.pdf",
+               focal=FOCALS, outgroup=OUTGROUPS, reference=REFERENCES, genotyper=GENOTYPERS)
 
 # --- INDEXAÇÕES DA REFERÊNCIA ---
 rule indexar_bwa:
@@ -112,4 +116,94 @@ rule gatk_haplotype_caller:
         """
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) broadinstitute/gatk:4.4.0.0 \
         gatk HaplotypeCaller -R {input.fasta} -I {input.bam_foc} -I {input.bam_out} -O {output.vcf}
+        """
+# --- FILTRAGEM DE VARIANTES (HARD FILTERING) ---
+rule filtragem_vcf:
+    input:
+        vcf="results/vcf/{focal}-{outgroup}-{reference}-{genotyper}.vcf"
+    output:
+        vcf_filt="results/vcf_filtered/{focal}-{outgroup}-{reference}-{genotyper}.filtered.vcf"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/bcftools:1.17 \
+        bcftools filter -i 'QUAL>30' {input.vcf} > {output.vcf_filt}
+        """
+
+# --- CONTROLE DE QUALIDADE (QC) ---
+rule samtools_stats_focal:
+    input:
+        bam="results/mapping/focal/{reference}-{focal}.sorted.bam"
+    output:
+        stats="results/qc/stats/focal/{reference}-{focal}.stats"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/samtools:1.17 \
+        samtools stats {input.bam} > {output.stats}
+        """
+
+rule samtools_stats_outgroup:
+    input:
+        bam="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam"
+    output:
+        stats="results/qc/stats/outgroup/{reference}-{outgroup}.stats"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/samtools:1.17 \
+        samtools stats {input.bam} > {output.stats}
+        """
+
+rule multiqc:
+    input:
+        stats_foc=expand("results/qc/stats/focal/{reference}-{focal}.stats", reference=REFERENCES, focal=FOCALS),
+        stats_out=expand("results/qc/stats/outgroup/{reference}-{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS)
+    output:
+        html="results/qc/multiqc_report.html"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/multiqc:1.14 \
+        multiqc results/qc/stats/ -o results/qc/
+        """
+# --- ESTATÍSTICAS E GRÁFICOS DO VCF (TIPO FIGURE S1 E S2 DO ARTIGO) ---
+rule vcf_stats:
+    input:
+        vcf="results/vcf_filtered/{focal}-{outgroup}-{reference}-{genotyper}.filtered.vcf"
+    output:
+        stats="results/qc/vcf_stats/{focal}-{outgroup}-{reference}-{genotyper}.vchk",
+        plot_dir=directory("results/qc/vcf_stats/plots_{focal}_{outgroup}_{reference}_{genotyper}")
+    shell:
+        """
+        # Extrai os dados matemáticos do VCF
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/bcftools:1.17 \
+        bcftools stats {input.vcf} > {output.stats}
+        
+        # Gera os gráficos automáticos em PDF usando o plot-vcfstats
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/bcftools:1.17 \
+        plot-vcfstats -p {output.plot_dir} {output.stats}
+        """
+
+# --- PREPARAÇÃO PARA O PCA (TIPO FIGURE 4 DO ARTIGO) ---
+rule pca_plink:
+    input:
+        vcf="results/vcf_filtered/{focal}-{outgroup}-{reference}-{genotyper}.filtered.vcf"
+    output:
+        eigenval="results/pca/{focal}-{outgroup}-{reference}-{genotyper}.eigenval",
+        eigenvec="results/pca/{focal}-{outgroup}-{reference}-{genotyper}.eigenvec"
+    params:
+        out_prefix="results/pca/{focal}-{outgroup}-{reference}-{genotyper}"
+    shell:
+        """
+        # PLINK vai ler o VCF e calcular as coordenadas X e Y de cada planta para o PCA
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/plink:1.90b6.21 \
+        plink --vcf {input.vcf} --double-id --allow-extra-chr --set-missing-var-ids @:# \
+        --pca --out {params.out_prefix}
+        """
+rule plot_pca:
+    input:
+        eigenvec="results/pca/{focal}-{outgroup}-{reference}-{genotyper}.eigenvec"
+    output:
+        pdf="results/qc/pca_plots/{focal}-{outgroup}-{reference}-{genotyper}_pca.pdf"
+    shell:
+        """
+        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" rocker/tidyverse:4.3.1 \
+        Rscript scripts/plot_pca.R {input.eigenvec} {output.pdf}
         """
