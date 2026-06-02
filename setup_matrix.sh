@@ -11,10 +11,11 @@ curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/146/045/GCF_000146045
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/002/079/055/GCA_002079055.1_ASM207905v1/GCA_002079055.1_ASM207905v1_genomic.fna.gz" -o ref_paradoxus.gz
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/166/975/GCA_000166975.1_ASM16697v1/GCA_000166975.1_ASM16697v1_genomic.fna.gz" -o S_mikatae.gz
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/001/298/625/GCA_001298625.1_SEUB3.0/GCA_001298625.1_SEUB3.0_genomic.fna.gz" -o S_eubayanus.gz
-curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/002/214/985/GCA_002214985.1_ASM221498v1/GCA_002214985.1_ASM221498v1_genomic.fna.gz" -o S_uvarum.gz
+# A URL CORRIGIDA (Kluyveromyces lactis disfarçado de S_uvarum)
+curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/515/GCF_000002515.2_ASM251v1/GCF_000002515.2_ASM251v1_genomic.fna.gz" -o S_uvarum.gz
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/545/GCF_000002545.3_ASM254v2/GCF_000002545.3_ASM254v2_genomic.fna.gz" -o C_glabrata.gz
 
-echo "Descompactando arquivos usando Python (substituindo gunzip)..."
+echo "Descompactando arquivos usando Python..."
 python3 -c "
 import gzip, shutil, sys
 arquivos = [
@@ -53,7 +54,7 @@ with open(fasta_in, 'r') as f:
 seq_len = len(seq)
 
 if seq_len < 1000:
-    print(f"\nERRO FATAL: O genoma {fasta_in} está vazio.")
+    print(f'\nERRO FATAL: O genoma {fasta_in} está vazio. O link do NCBI falhou.')
     sys.exit(1)
 
 q = "I" * read_len
@@ -71,12 +72,10 @@ with open(f"{out_prefix}_1.fastq", "w") as f1, open(f"{out_prefix}_2.fastq", "w"
             f2.write(f"@MSEQ:1:FC:{i}/2\n{r2}\n+\n{q}\n")
 EOF
 
-# Executa as simulações já usando os arquivos puros extraídos
 python3 simular_reads.py S_mikatae.fa data/raw/focal/Saccharomyces_mikatae/Saccharomyces_mikatae
 python3 simular_reads.py S_eubayanus.fa data/raw/focal/Saccharomyces_eubayanus/Saccharomyces_eubayanus
 python3 simular_reads.py S_uvarum.fa data/raw/outgroup/Saccharomyces_uvarum/Saccharomyces_uvarum
 python3 simular_reads.py C_glabrata.fa data/raw/outgroup/Candida_glabrata/Candida_glabrata
 
-# Limpeza pesada
 rm *.gz *.fa simular_reads.py
 echo "Setup biológico concluído com sucesso."
