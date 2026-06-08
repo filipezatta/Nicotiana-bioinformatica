@@ -1,11 +1,13 @@
 #!/bin/bash
 set -e
 
+# criando os 6 diretórios
 echo "Criando pastas do projeto..."
 mkdir -p data/raw/reference/Saccharomyces_cerevisiae data/raw/reference/Saccharomyces_paradoxus
 mkdir -p data/raw/focal/Saccharomyces_mikatae data/raw/focal/Saccharomyces_eubayanus
 mkdir -p data/raw/outgroup/Saccharomyces_uvarum data/raw/outgroup/Candida_glabrata
 
+#baixar -silent, -location (se a URL x dizer que mudou para a URL y, ele redireciona para a URL y), e -output para um zip
 echo "Baixando genomas (.gz) do NCBI..."
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/146/045/GCF_000146045.2_R64/GCF_000146045.2_R64_genomic.fna.gz" -o ref_cerevisiae.gz
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/002/079/055/GCA_002079055.1_ASM207905v1/GCA_002079055.1_ASM207905v1_genomic.fna.gz" -o ref_paradoxus.gz
@@ -26,17 +28,17 @@ arquivos = [
     ('S_uvarum.gz', 'S_uvarum.fa'),
     ('C_glabrata.gz', 'C_glabrata.fa')
 ]
-for gz_in, fa_out in arquivos:
-    print(f'Extraindo {gz_in}...')
+for gz_input, fasta_output in arquivos:
+    print(f'Extraindo {gz_input}...')
     try:
-        with gzip.open(gz_in, 'rb') as f_in:
-            with open(fa_out, 'wb') as f_out:
+        with gzip.open(gz_input, 'rb') as f_in:
+            with open(fasta_output, 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
     except Exception as e:
-        print(f'Erro ao extrair {gz_in}: {e}')
+        print(f'Erro ao extrair {gz_input}: {e}')
         sys.exit(1)
 "
-
+###criando o arquivo que picota o genoma de teste para simular reads - o sys.argv[x] são argumentos do comando ex.: python app.py argumento1 (o sys.argv[0] = ./app.py; sys.argv[1] = argumento1)
 echo "Fragmentando genomas (Gerando FastQs)..."
 cat << 'EOF' > simular_reads.py
 import sys, random
