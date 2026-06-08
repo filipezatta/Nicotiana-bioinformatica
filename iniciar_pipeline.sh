@@ -1,4 +1,5 @@
 #!/bin/bash
+#esse arquivo inicia um container docker com uma imagem do snakemake e baixa o docker nela. Depois roda o setup_matrix e o snakemake (com todos os cores da máquina rodando em paralelo).
 echo "Iniciando o Orquestrador Snakemake..."
 
 MSYS_NO_PATHCONV=1 docker run -it --rm \
