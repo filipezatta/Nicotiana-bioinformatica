@@ -1,5 +1,14 @@
 #!/bin/bash
 set -e
+#Esse arquivo faz várias coisas. Um resumo:
+# cria os diretórios para os 6 genomas que usaremos
+# baixa os genomas do NCBI como .gz
+# decompacta os genomas em .fasta
+# PARA TESTE cria um arquivo python que picota os genomas em reads
+# roda o simulador de reads
+# deleta os arquivos .gz e .fa sobressalentes e o simulador de reads
+
+
 
 # criando os 6 diretórios
 echo "Criando pastas do projeto..."
