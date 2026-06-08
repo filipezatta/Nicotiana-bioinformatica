@@ -1,3 +1,7 @@
+#esse app em streamlit abre uma inteface que permite o user criar um arquivo de config (para ter ou não os QCs). Provavelmente irei deletar posteriormente, porque normalmente serão necessários os QCs sempre.
+
+
+
 import streamlit as st
 import yaml
 import os
