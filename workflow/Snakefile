@@ -25,7 +25,7 @@ configfile: "config/config.yaml"
 # --- variáveis chave:
 REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
 OUTGROUPS = glob_wildcards("data/raw/outgroup/{outgroup}/{outgroup_file}_1.fastq").outgroup
-FOCALS = glob_wildcards("data/raw/focal/{focal}/{focal_file}_1.fastq").focal
+FOCALS_POPS, FOCALS_INDS = glob_wildcards("data/raw/focal/{pop}/{ind}_1.fastq")
 GENOTYPERS = config["genotypers"]
 
 #--- função do docker para não ter que mandar ele não fazer confusão toda vez
