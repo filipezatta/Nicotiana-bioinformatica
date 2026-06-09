@@ -36,7 +36,7 @@ def nicotiana_docker_run(image, cmd):
 #----Validate config
 assert "genotypers" in config, "Missing 'genotypers' in config"
 assert all(g in ["freebayes", "gatk"] for g in config["genotypers"]), \
-    "Invalid genotyper. Must be 'freebayes' or 'gatk'
+    "Invalid genotyper. Must be 'freebayes' or 'gatk'"
 
 # --- REGRA ALVO (12 ITERAÇÕES POR FOCAL) ---
 rule all:
@@ -157,7 +157,7 @@ rule filtragem_vcf:
         vcf="results/vcf/{focal}-{outgroup}-{reference}-{genotyper}.vcf"
     output:
         vcf_filt="results/vcf_filtered/{focal}-{outgroup}-{reference}-{genotyper}.filtered.vcf"
-    shell: nicotiana_docker_run("staphb/bcftools:1.17", "bcftools filter -i 'QUAL>30' {input.vcf} > {output.vcf_filt}"
+    shell: nicotiana_docker_run("staphb/bcftools:1.17", "bcftools filter -i 'QUAL>30' {input.vcf} > {output.vcf_filt}")
 
 # --- CONTROLE DE QUALIDADE (QC) ---
 rule samtools_stats_focal:
@@ -225,4 +225,4 @@ rule plot_pca:
         pdf="results/qc/pca_plots/{focal}-{outgroup}-{reference}-{genotyper}_pca.pdf"
     shell:
         nicotiana_docker_run ("rocker/tidyverse:4.3.1", "Rscript scripts/plot_pca.R {input.eigenvec} {output.pdf}")
-        """
+    
