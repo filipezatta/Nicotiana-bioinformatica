@@ -5,23 +5,22 @@ configfile: "config/config.yaml"
 # SUMARIO
 # glob_wildcards----------------- Escaneia as pastas e roda a matriz com base no que tá lá + checa o arquivo de config
 # rule_all ---------------------- Solicita ao sistema o multiqQC report, os .vcfs, .vchk, .eigenvec e pcas (.pdf) para cada combinação de GENOTYPERS, OUTGROUPS, FOCALS e OUTGROUPS existente 
-# rule indexar_bwa--------------- 
-# rule indexar_samtools----------
-# rule indexar_samtools_fai------
-# rule criar_dicionario_gatk ----
-# rule mapeamento_focal----------
-# rule mapeamento_outgroups------
-# rule indexar_bam_focal---------
-# rule indexar_bam_outgroup:-----
-# rule freebayes-----------------
-# rule gatk_haplotype_caller-----
-# rule filtragem_vcf-------------
-# rule samtools_stats_focal------
-# rule samtools_stats_outgroup---
-# rule multiqc-------------------
-# rule vcf_stats-----------------
-# rule pca_plink-----------------
-# rule plot_pca------------------
+# rule indexar_bwa--------------- Output: .bwt, .pac, .ann, .amb, .sa 
+# rule indexar_samtools_fai------ Output: fasta.fai
+# rule criar_dicionario_gatk ---- Output: .dict
+# rule mapeamento_focal---------- Output: focal.sorted.bam
+# rule mapeamento_outgroups------ Output: outgroup.sorted.bam
+# rule indexar_bam_focal--------- Output: sorted.bam.bai
+# rule indexar_bam_outgroup:----- Output: sorted.bam.bai
+# rule freebayes----------------- Output: x-freebayes-.vcf
+# rule gatk_haplotype_caller----- Output: x-gatk.vcf
+# rule filtragem_vcf------------- Output: x-filtered.vcf 
+# rule samtools_stats_focal------ Output: .stats
+# rule samtools_stats_outgroup--- Output: .stats
+# rule multiqc------------------- Output: MultiQC report
+# rule vcf_stats----------------- Output: .vchk e vcf stats
+# rule pca_plink----------------- Output: .eigenvec e .engenval (vetores)
+# rule plot_pca------------------ Output: plot PCA
 
 # --- O NOVO RADAR ---
 REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
@@ -53,18 +52,28 @@ rule indexar_bwa:
         amb="data/raw/reference/{reference}/{reference}.fasta.amb",
         sa="data/raw/reference/{reference}/{reference}.fasta.sa"
     shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 bwa index {input}"
+#bwa => burrow wheeler aligner -> abaixo os arquivos que o BWA usa para se achar no genoma depois quando formos transformar isso em um SAM (Sequence alignment map) e BAM (Binary alignment map)
+#.bwt => burrow wheeler transform
+#.pac => packed sequence
+#.ann => annotation
+#.amb => Ambiguous bases
+#.sa => Suffix Arrays
+
 
 rule indexar_samtools_fai:
     input: "data/raw/reference/{reference}/{reference}.fasta"
     output: "data/raw/reference/{reference}/{reference}.fasta.fai"
     shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 samtools faidx {input}"
+#index do fasta == .fasta.fai
 
 rule criar_dicionario_gatk:
     input: "data/raw/reference/{reference}/{reference}.fasta"
     output: "data/raw/reference/{reference}/{reference}.dict"
     shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) broadinstitute/gatk:4.4.0.0 gatk CreateSequenceDictionary -R {input} -O {output}"
 
+
 # --- MAPEAMENTOS INDEPENDENTES ---
+#rodando samtools com os .bwt criado antes
 rule mapeamento_focal:
     input:
         fasta="data/raw/reference/{reference}/{reference}.fasta",
