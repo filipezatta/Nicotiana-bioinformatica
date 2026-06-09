@@ -22,12 +22,21 @@ configfile: "config/config.yaml"
 # rule pca_plink----------------- Output: .eigenvec e .engenval (vetores)
 # rule plot_pca------------------ Output: plot PCA
 
-# --- O NOVO RADAR ---
+# --- variáveis chave:
 REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
 OUTGROUPS = glob_wildcards("data/raw/outgroup/{outgroup}/{outgroup_file}_1.fastq").outgroup
 FOCALS = glob_wildcards("data/raw/focal/{focal}/{focal_file}_1.fastq").focal
-
 GENOTYPERS = config["genotypers"]
+
+#--- função do docker para não ter que mandar ele não fazer confusão toda vez
+def nicotiana_docker_run(image, cmd):
+    return f"docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) {image} {cmd}"
+
+
+#----Validate config
+assert "genotypers" in config, "Missing 'genotypers' in config"
+assert all(g in ["freebayes", "gatk"] for g in config["genotypers"]), \
+    "Invalid genotyper. Must be 'freebayes' or 'gatk'
 
 # --- REGRA ALVO (12 ITERAÇÕES POR FOCAL) ---
 rule all:
@@ -51,7 +60,7 @@ rule indexar_bwa:
         ann="data/raw/reference/{reference}/{reference}.fasta.ann",
         amb="data/raw/reference/{reference}/{reference}.fasta.amb",
         sa="data/raw/reference/{reference}/{reference}.fasta.sa"
-    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 bwa index {input}"
+    shell: nicotiana_docker_run("staphb/bwa:0.7.17", "bwa index {input}")
 #bwa => burrow wheeler aligner -> abaixo os arquivos que o BWA usa para se achar no genoma depois quando formos transformar isso em um SAM (Sequence alignment map) e BAM (Binary alignment map)
 #.bwt => burrow wheeler transform
 #.pac => packed sequence
@@ -63,13 +72,13 @@ rule indexar_bwa:
 rule indexar_samtools_fai:
     input: "data/raw/reference/{reference}/{reference}.fasta"
     output: "data/raw/reference/{reference}/{reference}.fasta.fai"
-    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 samtools faidx {input}"
+    shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools faidx {input}")
 #index do fasta == .fasta.fai
 
 rule criar_dicionario_gatk:
     input: "data/raw/reference/{reference}/{reference}.fasta"
     output: "data/raw/reference/{reference}/{reference}.dict"
-    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) broadinstitute/gatk:4.4.0.0 gatk CreateSequenceDictionary -R {input} -O {output}"
+    shell: nicotiana_docker_run("broadinstitute/gatk:4.4.0.0", "gatk CreateSequenceDictionary -R {input} -O {output}")
 
 
 # --- MAPEAMENTOS INDEPENDENTES ---
@@ -110,12 +119,12 @@ rule mapeamento_outgroup:
 rule indexar_bam_focal:
     input: "results/mapping/focal/{reference}-{focal}.sorted.bam"
     output: "results/mapping/focal/{reference}-{focal}.sorted.bam.bai"
-    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 samtools index {input}"
+    shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools index {input}")
 
 rule indexar_bam_outgroup:
     input: "results/mapping/outgroup/{reference}-{outgroup}.sorted.bam"
     output: "results/mapping/outgroup/{reference}-{outgroup}.sorted.bam.bai"
-    shell: "docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 samtools index {input}"
+    shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools index {input}")
 
 # --- GENOTIPAGEM CONJUNTA (JOINT CALLING) ---
 rule freebayes:
@@ -127,11 +136,7 @@ rule freebayes:
         bai_out="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam.bai"
     output:
         vcf="results/vcf/{focal}-{outgroup}-{reference}-freebayes.vcf"
-    shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/freebayes:1.3.6 \
-        freebayes -f {input.fasta} {input.bam_foc} {input.bam_out} > {output.vcf}
-        """
+    shell: nicotiana_docker_run("staphb/freebayes:1.3.6", "freebayes -f {input.fasta} {input.bam_foc} {input.bam_out} > {output.vcf}")
 
 rule gatk_haplotype_caller:
     input:
@@ -144,22 +149,15 @@ rule gatk_haplotype_caller:
         bai_out="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam.bai"
     output:
         vcf="results/vcf/{focal}-{outgroup}-{reference}-gatk.vcf"
-    shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) broadinstitute/gatk:4.4.0.0 \
-        gatk HaplotypeCaller -R {input.fasta} -I {input.bam_foc} -I {input.bam_out} -O {output.vcf}
-        """
+    shell: nicotiana_docker_run("broadinstitute/gatk:4.4.0.0", "gatk HaplotypeCaller -R {input.fasta} -I {input.bam_foc} -I {input.bam_out} -O {output.vcf}")
+
 # --- FILTRAGEM DE VARIANTES (HARD FILTERING) ---
 rule filtragem_vcf:
     input:
         vcf="results/vcf/{focal}-{outgroup}-{reference}-{genotyper}.vcf"
     output:
         vcf_filt="results/vcf_filtered/{focal}-{outgroup}-{reference}-{genotyper}.filtered.vcf"
-    shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/bcftools:1.17 \
-        bcftools filter -i 'QUAL>30' {input.vcf} > {output.vcf_filt}
-        """
+    shell: nicotiana_docker_run("staphb/bcftools:1.17", "bcftools filter -i 'QUAL>30' {input.vcf} > {output.vcf_filt}"
 
 # --- CONTROLE DE QUALIDADE (QC) ---
 rule samtools_stats_focal:
@@ -168,10 +166,7 @@ rule samtools_stats_focal:
     output:
         stats="results/qc/stats/focal/{reference}-{focal}.stats"
     shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/samtools:1.17 \
-        samtools stats {input.bam} > {output.stats}
-        """
+        nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}"
 
 rule samtools_stats_outgroup:
     input:
@@ -179,10 +174,7 @@ rule samtools_stats_outgroup:
     output:
         stats="results/qc/stats/outgroup/{reference}-{outgroup}.stats"
     shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/samtools:1.17 \
-        samtools stats {input.bam} > {output.stats}
-        """
+        nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
 
 rule multiqc:
     input:
@@ -191,10 +183,7 @@ rule multiqc:
     output:
         html="results/qc/multiqc_report.html"
     shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/multiqc:1.14 \
-        multiqc results/qc/stats/ -o results/qc/
-        """
+        nicotiana_docker_run("staphb/multiqc:1.14", "multiqc results/qc/stats/ -o results/qc/")
 # --- ESTATÍSTICAS E GRÁFICOS DO VCF (TIPO FIGURE S1 E S2 DO ARTIGO) ---
 rule vcf_stats:
     input:
@@ -235,7 +224,5 @@ rule plot_pca:
     output:
         pdf="results/qc/pca_plots/{focal}-{outgroup}-{reference}-{genotyper}_pca.pdf"
     shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" rocker/tidyverse:4.3.1 \
-        Rscript scripts/plot_pca.R {input.eigenvec} {output.pdf}
+        nicotiana_docker_run ("rocker/tidyverse:4.3.1", "Rscript scripts/plot_pca.R {input.eigenvec} {output.pdf}")
         """
