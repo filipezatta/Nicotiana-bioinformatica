@@ -1,6 +1,6 @@
 configfile: "config/config.yaml"
 # esse é o arquivo mestre do snakemake, ele roda tudo, cada etapa em um container para facilitar o scaling e distribuição das atividades nos cores do(s) processador(es) em um servidor ou PC
-# cada rule é uma etapa, nós providenciamos o input e especificamos qual o ouput que queremos, e ele vai define o caminho do fim até a raiz e começa da raiz ao fim. 
+# cada rule é uma etapa, nós providenciamos o ouput que queremos (na rule all), e ele vai definir o caminho do ouput até o input, define a árvore de atividades para gerar o output e começa as tarefas. 
 # Se cair a luz no meio ele recomeça de onde parou; se especificarmos um output no meio ele para lá, se já dermos as reads mapeadas, ele vai começar dali.
 # SUMARIO
 # glob_wildcards----------------- Escaneia as pastas e roda a matriz com base no que tá lá + checa o arquivo de config
