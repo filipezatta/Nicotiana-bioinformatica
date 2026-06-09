@@ -1,8 +1,27 @@
 configfile: "config/config.yaml"
-# esse é o arquivo mestre do snakemake, ele roda tudo, cada etapa em um container para facilitar o scaling e distribuição das atividades em um servidor ou PC
-#
-#
-#
+# esse é o arquivo mestre do snakemake, ele roda tudo, cada etapa em um container para facilitar o scaling e distribuição das atividades nos cores do(s) processador(es) em um servidor ou PC
+# cada rule é uma etapa, nós providenciamos o input e especificamos qual o ouput que queremos, e ele vai define o caminho do fim até a raiz e começa da raiz ao fim. 
+# Se cair a luz no meio ele recomeça de onde parou; se especificarmos um output no meio ele para lá, se já dermos as reads mapeadas, ele vai começar dali.
+# SUMARIO
+# glob_wildcards----------------- Escaneia as pastas e roda a matriz com base no que tá lá + checa o arquivo de config
+# rule_all ---------------------- Solicita ao sistema o multiqQC report, os .vcfs, .vchk, .eigenvec e pcas (.pdf) para cada combinação de GENOTYPERS, OUTGROUPS, FOCALS e OUTGROUPS existente 
+# rule indexar_bwa--------------- 
+# rule indexar_samtools----------
+# rule indexar_samtools_fai------
+# rule criar_dicionario_gatk ----
+# rule mapeamento_focal----------
+# rule mapeamento_outgroups------
+# rule indexar_bam_focal---------
+# rule indexar_bam_outgroup:-----
+# rule freebayes-----------------
+# rule gatk_haplotype_caller-----
+# rule filtragem_vcf-------------
+# rule samtools_stats_focal------
+# rule samtools_stats_outgroup---
+# rule multiqc-------------------
+# rule vcf_stats-----------------
+# rule pca_plink-----------------
+# rule plot_pca------------------
 
 # --- O NOVO RADAR ---
 REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
@@ -16,7 +35,7 @@ rule all:
     input:
         expand("results/vcf_filtered/{focal}-{outgroup}-{reference}-{genotyper}.filtered.vcf",
                focal=FOCALS, outgroup=OUTGROUPS, reference=REFERENCES, genotyper=GENOTYPERS),
-        "results/qc/multiqc_report.html",
+        "results/qc/multiqc_report.html", 
         expand("results/qc/vcf_stats/{focal}-{outgroup}-{reference}-{genotyper}.vchk",
                focal=FOCALS, outgroup=OUTGROUPS, reference=REFERENCES, genotyper=GENOTYPERS),
         expand("results/pca/{focal}-{outgroup}-{reference}-{genotyper}.eigenvec",
