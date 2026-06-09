@@ -1,4 +1,8 @@
 configfile: "config/config.yaml"
+# esse é o arquivo mestre do snakemake, ele roda tudo, cada etapa em um container para facilitar o scaling e distribuição das atividades em um servidor ou PC
+#
+#
+#
 
 # --- O NOVO RADAR ---
 REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
