@@ -81,20 +81,43 @@ rule criar_dicionario_gatk:
     shell: nicotiana_docker_run("broadinstitute/gatk:4.4.0.0", "gatk CreateSequenceDictionary -R {input} -O {output}")
 
 
-# --- MAPEAMENTOS INDEPENDENTES ---
-#rodando samtools com os .bwt criado antes
+# --- LIMPEZA DE READS ---
+rule fastq_mcf_trim_focal:
+    input:
+        r1="data/raw/focal/{pop}/{ind}_1.fastq",
+        r2="data/raw/focal/{pop}/{ind}_2.fastq"
+    output:
+        r1_trim="results/trimmed/focal/{pop}/{ind}_1.trimmed.fastq",
+        r2_trim="results/trimmed/focal/{pop}/{ind}_2.trimmed.fastq"
+    shell: 
+        nicotiana_docker_run("staphb/ea-utils:1.04.801", "fastq-mcf -q 30 -l 50 n/a {input.r1} {input.r2} -o {output.r1_trim} -o {output.r2_trim}")
+
+rule fastq_mcf_trim_outgroup:
+    input:
+        r1="data/raw/outgroup/{outgroup}/{outgroup}_1.fastq",
+        r2="data/raw/outgroup/{outgroup}/{outgroup}_2.fastq"
+    output:
+        r1_trim="results/trimmed/outgroup/{outgroup}/{outgroup}_1.trimmed.fastq",
+        r2_trim="results/trimmed/outgroup/{outgroup}/{outgroup}_2.trimmed.fastq"
+    shell: 
+        nicotiana_docker_run("staphb/ea-utils:1.04.801", "fastq-mcf -q 30 -l 50 n/a {input.r1} {input.r2} -o {output.r1_trim} -o {output.r2_trim}")
+
+# --- MAPEAMENTO E SORTING (Etapas 4 e 6 integradas sem bamaddrg) ---
+# rodando samtools com os .bwt criado antes
 rule mapeamento_focal:
     input:
         fasta="data/raw/reference/{reference}/{reference}.fasta",
         bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
-        r1="data/raw/focal/{focal}/{focal}_1.fastq",
-        r2="data/raw/focal/{focal}/{focal}_2.fastq"
+        r1="results/trimmed/focal/{pop}/{ind}_1.trimmed.fastq",
+        r2="results/trimmed/focal/{pop}/{ind}_2.trimmed.fastq"
     output:
-        bam="results/mapping/focal/{reference}-{focal}.sorted.bam"
+        bam="results/mapping/focal/{reference}-{pop}-{ind}.sorted.bam"
     shell:
         """
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
-        bwa mem -R "@RG\\tID:{wildcards.focal}\\tSM:{wildcards.focal}\\tPL:ILLUMINA" {input.fasta} {input.r1} {input.r2} | \
+        bwa mem -R "@RG\\tID:{wildcards.ind}\\tSM:{wildcards.ind}\\tPL:ILLUMINA" {input.fasta} {input.r1} {input.r2} | \
+        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
+        samtools view -F 4 -Sb - | \
         docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
         samtools sort -o {output.bam} -
         """
@@ -103,14 +126,16 @@ rule mapeamento_outgroup:
     input:
         fasta="data/raw/reference/{reference}/{reference}.fasta",
         bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
-        r1="data/raw/outgroup/{outgroup}/{outgroup}_1.fastq",
-        r2="data/raw/outgroup/{outgroup}/{outgroup}_2.fastq"
+        r1="results/trimmed/outgroup/{outgroup}/{outgroup}_1.trimmed.fastq",
+        r2="results/trimmed/outgroup/{outgroup}/{outgroup}_2.trimmed.fastq"
     output:
         bam="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam"
     shell:
         """
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
         bwa mem -R "@RG\\tID:{wildcards.outgroup}\\tSM:{wildcards.outgroup}\\tPL:ILLUMINA" {input.fasta} {input.r1} {input.r2} | \
+        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
+        samtools view -F 4 -Sb - | \
         docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
         samtools sort -o {output.bam} -
         """
@@ -166,7 +191,7 @@ rule samtools_stats_focal:
     output:
         stats="results/qc/stats/focal/{reference}-{focal}.stats"
     shell:
-        nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}"
+        nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
 
 rule samtools_stats_outgroup:
     input:
@@ -176,14 +201,44 @@ rule samtools_stats_outgroup:
     shell:
         nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
 
+# --- CONTROLE DE QUALIDADE: FASTQC ---
+rule fastqc_raw:
+    input:
+        r1="data/raw/focal/{pop}/{ind}_1.fastq",
+        r2="data/raw/focal/{pop}/{ind}_2.fastq"
+    output:
+        out_dir=directory("results/qc/fastqc/raw/{pop}_{ind}")
+    shell:
+        """
+        mkdir -p {output.out_dir}
+        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/fastqc:0.12.1 \
+        fastqc -q {input.r1} {input.r2} -o {output.out_dir}
+        """
+
+rule fastqc_trimmed:
+    input:
+        r1="results/trimmed/focal/{pop}/{ind}_1.trimmed.fastq",
+        r2="results/trimmed/focal/{pop}/{ind}_2.trimmed.fastq"
+    output:
+        out_dir=directory("results/qc/fastqc/trimmed/{pop}_{ind}")
+    shell:
+        """
+        mkdir -p {output.out_dir}
+        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/fastqc:0.12.1 \
+        fastqc -q {input.r1} {input.r2} -o {output.out_dir}
+        """
+
 rule multiqc:
     input:
-        stats_foc=expand("results/qc/stats/focal/{reference}-{focal}.stats", reference=REFERENCES, focal=FOCALS),
-        stats_out=expand("results/qc/stats/outgroup/{reference}-{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS)
+        stats_foc=expand("results/qc/stats/focal/{reference}-{pop}-{ind}.stats", reference=REFERENCES, zip, pop=FOCALS_POPS, ind=FOCALS_INDS),
+        stats_out=expand("results/qc/stats/outgroup/{reference}-{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS),
+        fqc_raw=expand("results/qc/fastqc/raw/{pop}_{ind}", zip, pop=FOCALS_POPS, ind=FOCALS_INDS),
+        fqc_trim=expand("results/qc/fastqc/trimmed/{pop}_{ind}", zip, pop=FOCALS_POPS, ind=FOCALS_INDS)
     output:
         html="results/qc/multiqc_report.html"
     shell:
-        nicotiana_docker_run("staphb/multiqc:1.14", "multiqc results/qc/stats/ -o results/qc/")
+        nicotiana_docker_run("staphb/multiqc:1.14", "multiqc results/qc/ results/trimmed/ -o results/qc/")
+
 # --- ESTATÍSTICAS E GRÁFICOS DO VCF (TIPO FIGURE S1 E S2 DO ARTIGO) ---
 rule vcf_stats:
     input:
