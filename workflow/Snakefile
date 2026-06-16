@@ -26,8 +26,9 @@ configfile: "config/config.yaml"
 REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
 OUTGROUPS = glob_wildcards("data/raw/outgroup/{outgroup}/{outgroup_file}_1.fastq").outgroup
 
-FOCAL_MATCHES = glob_wildcards("data/raw/focal/{pop}/{ind}_1.fastq")
-FOCALS_POPS = FOCAL_MATCHES.pop
+# Substituição de {pop} por {populacao} para evitar conflito com palavra reservada do Python
+FOCAL_MATCHES = glob_wildcards("data/raw/focal/{populacao}/{ind}_1.fastq")
+FOCALS_POPS = FOCAL_MATCHES.populacao
 FOCALS_INDS = FOCAL_MATCHES.ind
 
 #--- função do docker para não ter que mandar ele não fazer confusão toda vez
@@ -74,10 +75,10 @@ rule criar_dicionario_gatk:
 # --- CONTROLE DE QUALIDADE INICIAL: FASTQC RAW ---
 rule fastqc_raw:
     input:
-        r1="data/raw/focal/{pop}/{ind}_1.fastq",
-        r2="data/raw/focal/{pop}/{ind}_2.fastq"
+        r1="data/raw/focal/{populacao}/{ind}_1.fastq",
+        r2="data/raw/focal/{populacao}/{ind}_2.fastq"
     output:
-        out_dir=directory("results/qc/fastqc/raw/{pop}_{ind}")
+        out_dir=directory("results/qc/fastqc/raw/{populacao}_{ind}")
     shell:
         """
         mkdir -p {output.out_dir}
@@ -88,11 +89,11 @@ rule fastqc_raw:
 # --- LIMPEZA DE READS (M_TRIM2 - Phred 30) ---
 rule fastq_mcf_trim_focal:
     input:
-        r1="data/raw/focal/{pop}/{ind}_1.fastq",
-        r2="data/raw/focal/{pop}/{ind}_2.fastq"
+        r1="data/raw/focal/{populacao}/{ind}_1.fastq",
+        r2="data/raw/focal/{populacao}/{ind}_2.fastq"
     output:
-        r1_trim="results/trimmed/focal/{pop}/{ind}_1.trimmed.fastq",
-        r2_trim="results/trimmed/focal/{pop}/{ind}_2.trimmed.fastq"
+        r1_trim="results/trimmed/focal/{populacao}/{ind}_1.trimmed.fastq",
+        r2_trim="results/trimmed/focal/{populacao}/{ind}_2.trimmed.fastq"
     shell: 
         nicotiana_docker_run("staphb/ea-utils:1.04.801", "fastq-mcf -q 30 -l 50 n/a {input.r1} {input.r2} -o {output.r1_trim} -o {output.r2_trim}")
 
@@ -109,10 +110,10 @@ rule fastq_mcf_trim_outgroup:
 # --- CONTROLE DE QUALIDADE PÓS-LIMPEZA: FASTQC TRIMMED ---
 rule fastqc_trimmed:
     input:
-        r1="results/trimmed/focal/{pop}/{ind}_1.trimmed.fastq",
-        r2="results/trimmed/focal/{pop}/{ind}_2.trimmed.fastq"
+        r1="results/trimmed/focal/{populacao}/{ind}_1.trimmed.fastq",
+        r2="results/trimmed/focal/{populacao}/{ind}_2.trimmed.fastq"
     output:
-        out_dir=directory("results/qc/fastqc/trimmed/{pop}_{ind}")
+        out_dir=directory("results/qc/fastqc/trimmed/{populacao}_{ind}")
     shell:
         """
         mkdir -p {output.out_dir}
@@ -126,10 +127,10 @@ rule mapeamento_focal:
     input:
         fasta="data/raw/reference/{reference}/{reference}.fasta",
         bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
-        r1="results/trimmed/focal/{pop}/{ind}_1.trimmed.fastq",
-        r2="results/trimmed/focal/{pop}/{ind}_2.trimmed.fastq"
+        r1="results/trimmed/focal/{populacao}/{ind}_1.trimmed.fastq",
+        r2="results/trimmed/focal/{populacao}/{ind}_2.trimmed.fastq"
     output:
-        bam="results/mapping/focal/{reference}-{pop}-{ind}.sorted.bam"
+        bam="results/mapping/focal/{reference}-{populacao}-{ind}.sorted.bam"
     shell:
         """
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
@@ -159,8 +160,8 @@ rule mapeamento_outgroup:
         """
 
 rule samtools_stats_focal:
-    input: bam="results/mapping/focal/{reference}-{pop}-{ind}.sorted.bam"
-    output: stats="results/qc/stats/focal/{reference}-{pop}-{ind}.stats"
+    input: bam="results/mapping/focal/{reference}-{populacao}-{ind}.sorted.bam"
+    output: stats="results/qc/stats/focal/{reference}-{populacao}-{ind}.stats"
     shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
 
 rule samtools_stats_outgroup:
@@ -171,7 +172,7 @@ rule samtools_stats_outgroup:
 # --- UNIFICAÇÃO DA POPULAÇÃO COM BAMADDRG ---
 rule bamaddrg_merge:
     input:
-        bams_foc=expand("results/mapping/focal/{{reference}}-{pop}-{ind}.sorted.bam", zip, pop=FOCALS_POPS, ind=FOCALS_INDS),
+        bams_foc=expand("results/mapping/focal/{{reference}}-{populacao}-{ind}.sorted.bam", zip, populacao=FOCALS_POPS, ind=FOCALS_INDS),
         bam_out="results/mapping/outgroup/{reference}-{outgroup}.sorted.bam"
     output:
         bam="results/mapping/unified/{reference}-{outgroup}.unified.bam"
@@ -208,10 +209,10 @@ rule filtragem_vcf:
 
 rule multiqc:
     input:
-        stats_foc=[f"results/qc/stats/focal/{ref}-{pop}-{ind}.stats" for ref in REFERENCES for pop, ind in zip(FOCALS_POPS, FOCALS_INDS)],
+        stats_foc=[f"results/qc/stats/focal/{ref}-{populacao}-{ind}.stats" for ref in REFERENCES for populacao, ind in zip(FOCALS_POPS, FOCALS_INDS)],
         stats_out=expand("results/qc/stats/outgroup/{reference}-{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS),
-        fqc_raw=expand("results/qc/fastqc/raw/{pop}_{ind}", zip, pop=FOCALS_POPS, ind=FOCALS_INDS),
-        fqc_trim=expand("results/qc/fastqc/trimmed/{pop}_{ind}", zip, pop=FOCALS_POPS, ind=FOCALS_INDS)
+        fqc_raw=expand("results/qc/fastqc/raw/{populacao}_{ind}", zip, populacao=FOCALS_POPS, ind=FOCALS_INDS),
+        fqc_trim=expand("results/qc/fastqc/trimmed/{populacao}_{ind}", zip, populacao=FOCALS_POPS, ind=FOCALS_INDS)
     output:
         html="results/qc/multiqc_report.html"
     shell:
