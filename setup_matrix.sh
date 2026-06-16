@@ -9,6 +9,11 @@ set -e
 # roda o simulador de reads
 # deleta os arquivos .gz e .fa sobressalentes e o simulador de reads
 
+if [ -f "data/raw/focal/Ala16/Ala16_ind1_1.fastq" ]; then
+    echo "Os dados brutos já estão no disco. Pulando o download do NCBI e a simulação de reads..."
+    exit 0
+fi
+
 # criando os diretórios
 echo "Criando árvore de diretórios do Step 1 (Nicotiana)..."
 mkdir -p data/raw/reference/N_sylvestris data/raw/reference/P_axillaris
