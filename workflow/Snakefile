@@ -208,7 +208,7 @@ rule filtragem_vcf:
 
 rule multiqc:
     input:
-        stats_foc=expand("results/qc/stats/focal/{reference}-{pop}-{ind}.stats", reference=REFERENCES, zip, pop=FOCALS_POPS, ind=FOCALS_INDS),
+        stats_foc=[f"results/qc/stats/focal/{ref}-{pop}-{ind}.stats" for ref in REFERENCES for pop, ind in zip(FOCALS_POPS, FOCALS_INDS)],
         stats_out=expand("results/qc/stats/outgroup/{reference}-{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS),
         fqc_raw=expand("results/qc/fastqc/raw/{pop}_{ind}", zip, pop=FOCALS_POPS, ind=FOCALS_INDS),
         fqc_trim=expand("results/qc/fastqc/trimmed/{pop}_{ind}", zip, pop=FOCALS_POPS, ind=FOCALS_INDS)
