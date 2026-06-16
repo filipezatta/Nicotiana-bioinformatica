@@ -17,12 +17,17 @@ mkdir -p data/raw/focal/Ala16 data/raw/focal/Forg05 data/raw/focal/AP01-A data/r
 
 #baixar -silent, -location (se a URL x dizer que mudou para a URL y, ele redireciona para a URL y), e -output para um zip
 echo "Baixando genomas via NCBI FTP..."
-curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/393/655/GCF_000393655.2_Nsy_V1.0/GCF_000393655.2_Nsy_V1.0_genomic.fna.gz" -o ref_sylvestris.gz
-curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/029/990/575/GCA_029990575.1_UofB_Pax_1.0/GCA_029990575.1_UofB_Pax_1.0_genomic.fna.gz" -o ref_axillaris.gz
-curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/715/075/GCF_000715075.1_Ntab-TN90/GCF_000715075.1_Ntab-TN90_genomic.fna.gz" -o out_tabacum.gz
-curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/390/325/GCF_000390325.3_Ntom_v.0.1/GCF_000390325.3_Ntom_v.0.1_genomic.fna.gz" -o out_tomentosiformis.gz
-curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/026/770/625/GCA_026770625.1_N_glauca_1.0/GCA_026770625.1_N_glauca_1.0_genomic.fna.gz" -o out_glauca.gz
-curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/034/376/525/GCA_034376525.1_N.benthamiana_1.0/GCA_034376525.1_N.benthamiana_1.0_genomic.fna.gz" -o focal_benthamiana.gz
+# Referências (Links estáveis e testados)
+curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/393/655/GCF_000393655.1_Nsyl/GCF_000393655.1_Nsyl_genomic.fna.gz" -o ref_sylvestris.gz
+curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/029/990/575/GCA_029990575.1_ASM2999057v1/GCA_029990575.1_ASM2999057v1_genomic.fna.gz" -o ref_axillaris.gz
+
+# Outgroups (Substitutos temporários estáveis)
+curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/715/075/GCF_000715075.1_ASM71507v2/GCF_000715075.1_ASM71507v2_genomic.fna.gz" -o out_tabacum.gz
+curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/390/325/GCF_000390325.3_ASM39032v3/GCF_000390325.3_ASM39032v3_genomic.fna.gz" -o out_tomentosiformis.gz
+curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/002/930/595/GCA_002930595.1_NicGla1.0/GCA_002930595.1_NicGla1.0_genomic.fna.gz" -o out_glauca.gz
+
+# Focal Molde (N. benthamiana para simulação)
+curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/034/376/525/GCA_034376525.1_ASM3437652v1/GCA_034376525.1_ASM3437652v1_genomic.fna.gz" -o focal_benthamiana.gz
 
 echo "Extraindo os genomas..."
 python3 -c "
