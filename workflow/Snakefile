@@ -15,8 +15,8 @@ configfile: "config/config.yaml"
 # rule mapeamento_outgroups------ Output: outgroup.sorted.bam
 # rule samtools_stats_...-------- Output: .stats
 # rule bamaddrg_merge------------ Output: .unified.bam (unificação dos indivíduos para o Freebayes)
-# rule freebayes_joint----------- Output: x-freebayes-.vcf (Genotipagem conjunta)
-# rule filtragem_vcf------------- Output: x-filtered.vcf 
+# rule freebayes_joint----------- Output: x.freebayes.vcf (Genotipagem conjunta)
+# rule filtragem_vcf------------- Output: x.filtered.vcf 
 # rule multiqc------------------- Output: MultiQC report consolidado
 # rule vcf_stats----------------- Output: .vchk e vcf stats
 # rule pca_plink----------------- Output: .eigenvec e .engenval (vetores)
@@ -35,28 +35,27 @@ FOCALS_INDS = FOCAL_MATCHES.ind
 def nicotiana_docker_run(image, cmd):
     return f"docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) {image} {cmd}"
 
-#--- função segura para extrair os nomes pro bamaddrg blindada contra hífens
+#--- função cega a hifens e underlines, que usa o PONTO para extrair a tag do bamaddrg
 def get_bamaddrg_flags(wildcards, input):
     flags = []
     for bam in input.bams_foc:
-        # Extrai nome do arquivo: ex. N_sylvestris_AP01-A_ind1.sorted.bam
+        # Extrai nome do arquivo: ex. N_sylvestris.AP01-A.ind1.sorted.bam
         filename = bam.split('/')[-1]
-        parts = filename.split('_')
+        parts = filename.split('.')
         populacao = parts[1]
-        ind = parts[2].split('.')[0]
+        ind = parts[2]
         flags.append(f"-b {bam} -s {populacao}_{ind}")
     flags.append(f"-b {input.bam_out} -s {wildcards.outgroup}")
     return " ".join(flags)
 
-
 # --- REGRA ALVO ---
 rule all:
     input:
-        expand("results/vcf_filtered/{reference}_{outgroup}_freebayes.filtered.vcf", reference=REFERENCES, outgroup=OUTGROUPS),
+        expand("results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf", reference=REFERENCES, outgroup=OUTGROUPS),
         "results/qc/multiqc_report.html", 
-        expand("results/qc/vcf_stats/{reference}_{outgroup}_freebayes.vchk", reference=REFERENCES, outgroup=OUTGROUPS),
-        expand("results/pca/{reference}_{outgroup}_freebayes.eigenvec", reference=REFERENCES, outgroup=OUTGROUPS),
-        expand("results/qc/pca_plots/{reference}_{outgroup}_freebayes_pca.pdf", reference=REFERENCES, outgroup=OUTGROUPS)
+        expand("results/qc/vcf_stats/{reference}.{outgroup}.freebayes.vchk", reference=REFERENCES, outgroup=OUTGROUPS),
+        expand("results/pca/{reference}.{outgroup}.freebayes.eigenvec", reference=REFERENCES, outgroup=OUTGROUPS),
+        expand("results/qc/pca_plots/{reference}.{outgroup}.freebayes_pca.pdf", reference=REFERENCES, outgroup=OUTGROUPS)
 
 # --- INDEXAÇÕES DA REFERÊNCIA ---
 rule indexar_bwa:
@@ -129,7 +128,6 @@ rule fastqc_trimmed:
         """
 
 # --- MAPEAMENTO E SORTING (COM FILTRO -F 4) ---
-# Usando UNDERLINE (_) para proteger contra o hífen de AP01-A
 rule mapeamento_focal:
     input:
         fasta="data/raw/reference/{reference}/{reference}.fasta",
@@ -137,7 +135,7 @@ rule mapeamento_focal:
         r1="results/trimmed/focal/{populacao}/{ind}_1.trimmed.fastq",
         r2="results/trimmed/focal/{populacao}/{ind}_2.trimmed.fastq"
     output:
-        bam="results/mapping/focal/{reference}_{populacao}_{ind}.sorted.bam"
+        bam="results/mapping/focal/{reference}.{populacao}.{ind}.sorted.bam"
     shell:
         """
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
@@ -155,7 +153,7 @@ rule mapeamento_outgroup:
         r1="results/trimmed/outgroup/{outgroup}/{outgroup}_1.trimmed.fastq",
         r2="results/trimmed/outgroup/{outgroup}/{outgroup}_2.trimmed.fastq"
     output:
-        bam="results/mapping/outgroup/{reference}_{outgroup}.sorted.bam"
+        bam="results/mapping/outgroup/{reference}.{outgroup}.sorted.bam"
     shell:
         """
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
@@ -167,22 +165,22 @@ rule mapeamento_outgroup:
         """
 
 rule samtools_stats_focal:
-    input: bam="results/mapping/focal/{reference}_{populacao}_{ind}.sorted.bam"
-    output: stats="results/qc/stats/focal/{reference}_{populacao}_{ind}.stats"
+    input: bam="results/mapping/focal/{reference}.{populacao}.{ind}.sorted.bam"
+    output: stats="results/qc/stats/focal/{reference}.{populacao}.{ind}.stats"
     shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
 
 rule samtools_stats_outgroup:
-    input: bam="results/mapping/outgroup/{reference}_{outgroup}.sorted.bam"
-    output: stats="results/qc/stats/outgroup/{reference}_{outgroup}.stats"
+    input: bam="results/mapping/outgroup/{reference}.{outgroup}.sorted.bam"
+    output: stats="results/qc/stats/outgroup/{reference}.{outgroup}.stats"
     shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
 
 # --- UNIFICAÇÃO DA POPULAÇÃO COM BAMADDRG ---
 rule bamaddrg_merge:
     input:
-        bams_foc=expand("results/mapping/focal/{{reference}}_{populacao}_{ind}.sorted.bam", zip, populacao=FOCALS_POPS, ind=FOCALS_INDS),
-        bam_out="results/mapping/outgroup/{reference}_{outgroup}.sorted.bam"
+        bams_foc=expand("results/mapping/focal/{{reference}}.{populacao}.{ind}.sorted.bam", zip, populacao=FOCALS_POPS, ind=FOCALS_INDS),
+        bam_out="results/mapping/outgroup/{reference}.{outgroup}.sorted.bam"
     output:
-        bam="results/mapping/unified/{reference}_{outgroup}.unified.bam"
+        bam="results/mapping/unified/{reference}.{outgroup}.unified.bam"
     params:
         flags=get_bamaddrg_flags
     shell:
@@ -192,8 +190,8 @@ rule bamaddrg_merge:
         """
 
 rule indexar_bam_unified:
-    input: "results/mapping/unified/{reference}_{outgroup}.unified.bam"
-    output: "results/mapping/unified/{reference}_{outgroup}.unified.bam.bai"
+    input: "results/mapping/unified/{reference}.{outgroup}.unified.bam"
+    output: "results/mapping/unified/{reference}.{outgroup}.unified.bam.bai"
     shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools index {input}")
 
 # --- GENOTIPAGEM CONJUNTA (JOINT CALLING) ---
@@ -201,23 +199,23 @@ rule freebayes_joint:
     input:
         fasta="data/raw/reference/{reference}/{reference}.fasta",
         fai="data/raw/reference/{reference}/{reference}.fasta.fai",
-        bam="results/mapping/unified/{reference}_{outgroup}.unified.bam",
-        bai="results/mapping/unified/{reference}_{outgroup}.unified.bam.bai"
+        bam="results/mapping/unified/{reference}.{outgroup}.unified.bam",
+        bai="results/mapping/unified/{reference}.{outgroup}.unified.bam.bai"
     output:
-        vcf="results/vcf/{reference}_{outgroup}_freebayes.vcf"
+        vcf="results/vcf/{reference}.{outgroup}.freebayes.vcf"
     shell: 
         nicotiana_docker_run("staphb/freebayes:1.3.6", "freebayes -f {input.fasta} {input.bam} > {output.vcf}")
 
 # --- FILTRAGEM DE VARIANTES (HARD FILTERING) ---
 rule filtragem_vcf:
-    input: vcf="results/vcf/{reference}_{outgroup}_freebayes.vcf"
-    output: vcf_filt="results/vcf_filtered/{reference}_{outgroup}_freebayes.filtered.vcf"
+    input: vcf="results/vcf/{reference}.{outgroup}.freebayes.vcf"
+    output: vcf_filt="results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf"
     shell: nicotiana_docker_run("staphb/bcftools:1.17", "bcftools filter -i 'QUAL>30' {input.vcf} > {output.vcf_filt}")
 
 rule multiqc:
     input:
-        stats_foc=[f"results/qc/stats/focal/{ref}_{populacao}_{ind}.stats" for ref in REFERENCES for populacao, ind in zip(FOCALS_POPS, FOCALS_INDS)],
-        stats_out=expand("results/qc/stats/outgroup/{reference}_{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS),
+        stats_foc=[f"results/qc/stats/focal/{ref}.{populacao}.{ind}.stats" for ref in REFERENCES for populacao, ind in zip(FOCALS_POPS, FOCALS_INDS)],
+        stats_out=expand("results/qc/stats/outgroup/{reference}.{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS),
         fqc_raw=expand("results/qc/fastqc/raw/{populacao}_{ind}", zip, populacao=FOCALS_POPS, ind=FOCALS_INDS),
         fqc_trim=expand("results/qc/fastqc/trimmed/{populacao}_{ind}", zip, populacao=FOCALS_POPS, ind=FOCALS_INDS)
     output:
@@ -227,9 +225,9 @@ rule multiqc:
 
 # --- ESTATÍSTICAS E GRÁFICOS DO VCF (TIPO FIGURE S1 E S2 DO ARTIGO) ---
 rule vcf_stats:
-    input: vcf="results/vcf_filtered/{reference}_{outgroup}_freebayes.filtered.vcf"
+    input: vcf="results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf"
     output:
-        stats="results/qc/vcf_stats/{reference}_{outgroup}_freebayes.vchk",
+        stats="results/qc/vcf_stats/{reference}.{outgroup}.freebayes.vchk",
         plot_dir=directory("results/qc/vcf_stats/plots_{reference}_{outgroup}")
     shell:
         """
@@ -244,12 +242,12 @@ rule vcf_stats:
 
 # --- PREPARAÇÃO PARA O PCA (TIPO FIGURE 4 DO ARTIGO) ---
 rule pca_plink:
-    input: vcf="results/vcf_filtered/{reference}_{outgroup}_freebayes.filtered.vcf"
+    input: vcf="results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf"
     output:
-        eigenval="results/pca/{reference}_{outgroup}_freebayes.eigenval",
-        eigenvec="results/pca/{reference}_{outgroup}_freebayes.eigenvec"
+        eigenval="results/pca/{reference}.{outgroup}.freebayes.eigenval",
+        eigenvec="results/pca/{reference}.{outgroup}.freebayes.eigenvec"
     params:
-        out_prefix="results/pca/{reference}_{outgroup}_freebayes"
+        out_prefix="results/pca/{reference}.{outgroup}.freebayes"
     shell:
         """
         # PLINK vai ler o VCF e calcular as coordenadas X e Y de cada planta para o PCA
@@ -259,7 +257,7 @@ rule pca_plink:
         """
 
 rule plot_pca:
-    input: eigenvec="results/pca/{reference}_{outgroup}_freebayes.eigenvec"
-    output: pdf="results/qc/pca_plots/{reference}_{outgroup}_freebayes_pca.pdf"
+    input: eigenvec="results/pca/{reference}.{outgroup}.freebayes.eigenvec"
+    output: pdf="results/qc/pca_plots/{reference}.{outgroup}.freebayes_pca.pdf"
     shell:
         nicotiana_docker_run("rocker/tidyverse:4.3.1", "Rscript scripts/plot_pca.R {input.eigenvec} {output.pdf}")
