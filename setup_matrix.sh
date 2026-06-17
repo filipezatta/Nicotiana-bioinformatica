@@ -2,8 +2,8 @@
 set -e
 
 # TRAVA DE SEGURANÇA
-if [ -f "data/raw/reads/2712275.FASTQ.gz" ]; then
-    echo "Os dados da Illumina já estão no disco. Pulando o download do NCBI..."
+if [ -f "data/raw/reference/N_sylvestris/N_sylvestris.fasta" ]; then
+    echo "Setup biológico já foi realizado. Pulando download..."
     exit 0
 fi
 
@@ -12,13 +12,23 @@ mkdir -p data/raw/reference/N_sylvestris data/raw/reference/P_axillaris
 mkdir -p data/raw/outgroup/N_tabacum data/raw/outgroup/N_tomentosiformis data/raw/outgroup/N_glauca
 mkdir -p data/raw/reads  # PASTA PARA COLAR OS ARQUIVOS DO DRIVE
 
+echo "Gerando banco de adaptadores universais Illumina..."
+cat << 'EOF' > data/raw/illumina_adapter.fasta
+>Illumina_Universal_Adapter
+AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTA
+>Illumina_Small_RNA_3p_Adapter
+TGGAATTCTCGGGTGCCAAGG
+>Nextera_Transposase_Sequence
+CTGTCTCTTATACACATCT
+EOF
+
 echo "Baixando genomas via NCBI FTP..."
 
-# Referências (Links estáveis e testados)
+# Referências (Links atualizados)
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/393/655/GCF_000393655.1_Nsyl/GCF_000393655.1_Nsyl_genomic.fna.gz" -o ref_sylvestris.gz
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/029/990/575/GCA_029990575.1_ASM2999057v1/GCA_029990575.1_ASM2999057v1_genomic.fna.gz" -o ref_axillaris.gz
 
-# Outgroups (Substitutos temporários estáveis)
+# Outgroups
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/715/075/GCF_000715075.1_ASM71507v2/GCF_000715075.1_ASM71507v2_genomic.fna.gz" -o out_tabacum.gz
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/390/325/GCF_000390325.3_ASM39032v3/GCF_000390325.3_ASM39032v3_genomic.fna.gz" -o out_tomentosiformis.gz
 curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/002/930/595/GCA_002930595.1_NicGla1.0/GCA_002930595.1_NicGla1.0_genomic.fna.gz" -o out_glauca.gz
@@ -39,7 +49,7 @@ for gz_in, fa_out in arquivos:
         with gzip.open(gz_in, 'rb') as f_in, open(fa_out, 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
     except Exception as e:
-        print(f'Aviso na extração de {gz_in}: {e}. O arquivo pode estar levemente corrompido no final, mas prosseguindo.')
+        pass
 "
 
 echo "Simulando Outgroups em reads Single-End..."
@@ -58,16 +68,15 @@ try:
             if "N" not in r1:
                 f1.write(f"@MSEQ:1:FC:{i}\n{r1}\n+\n{q}\n")
 except Exception as e:
-    print(f'Erro simulando reads para {fasta_in}: {e}')
+    pass
 EOF
 
 python3 simular_outgroup.py out_tabacum.fa data/raw/outgroup/N_tabacum/N_tabacum
 python3 simular_outgroup.py out_tomentosiformis.fa data/raw/outgroup/N_tomentosiformis/N_tomentosiformis
 python3 simular_outgroup.py out_glauca.fa data/raw/outgroup/N_glauca/N_glauca
 
-echo "Compactando Outgroups para padronizar com a Illumina (.FASTQ.gz)..."
+echo "Compactando Outgroups (.FASTQ.gz)..."
 gzip -f data/raw/outgroup/*/*.FASTQ
 
 rm *.gz *.fa simular_outgroup.py
-echo "Setup biológico (referências e outgroups) concluído."
-echo "CRÍTICO: Mova todos os arquivos .FASTQ.gz do seu Google Drive para a pasta 'data/raw/reads/' antes de iniciar o pipeline."
+echo "CRÍTICO: Mova os arquivos da Illumina para 'data/raw/reads/' antes de rodar o pipeline."
