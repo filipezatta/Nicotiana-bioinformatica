@@ -97,14 +97,14 @@ rule fastq_mcf_focal:
         read="data/raw/reads/{ind}.FASTQ.gz",
         adapter="data/raw/illumina_adapter.fasta"
     output: "results/trimmed/reads/{ind}.trimmed.fastq.gz"
-    shell: nicotiana_docker_run("quay.io/biocontainers/ea-utils:1.04.801--h2e03b76_4", "fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}")
+    shell: nicotiana_docker_run("quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0", "fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}")
 
 rule fastq_mcf_outgroup:
     input: 
         read="data/raw/outgroup/{outgroup}/{outgroup}.FASTQ.gz",
         adapter="data/raw/illumina_adapter.fasta"
     output: "results/trimmed/outgroup/{outgroup}.trimmed.fastq.gz"
-    shell: nicotiana_docker_run("quay.io/biocontainers/ea-utils:1.04.801--h2e03b76_4", "fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}")
+    shell: nicotiana_docker_run("quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0", "fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}")
 
 # --- FASTQC TRIMMED ---
 rule fastqc_trimmed_focal:
