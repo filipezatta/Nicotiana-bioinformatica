@@ -11,8 +11,8 @@ rule all:
     input:
         expand("results/qc/fastqc/raw/{ind}", ind=INDS),
         expand("results/qc/fastqc/trimmed/{ind}", ind=INDS),
-        "results/qc/read_counts.txt",
-        "results/qc/trimmed_count.txt"
+        "results/qc/QC_control_table.tsv"
+
 
 # ==========================================
 # 01 STEP: RAW STAT ASSESSMENT
@@ -78,22 +78,46 @@ rule fastq_stats_trimmed:
         """
 
 # ==========================================
-# AGGREGAÇÃO (SUBSTITUI O LAÇO 'FOR' DO BASH)
+# AGGREGAÇÃO E MATEMÁTICA (QC CONTROL TABLE)
 # ==========================================
 rule merge_stats:
     input:
         raw=expand("results/qc/stats/raw/{ind}.RAW_stats.txt", ind=INDS),
         trim=expand("results/qc/stats/trimmed/{ind}.q30l50_stats.txt", ind=INDS)
     output:
-        raw_counts="results/qc/read_counts.txt",
-        trim_counts="results/qc/trimmed_count.txt"
-    shell:
-        """
-        # Adiciona os cabeçalhos para o Excel
-        echo -e "sample\\ttotal_RAW_reads" > {output.raw_counts}
-        echo -e "sample\\tq30_l50_kept" > {output.trim_counts}
+        qc_table="results/qc/QC_control_table.tsv"
+    run:
+        stats = {}
         
-        # Concatena todos os arquivos intermediários
-        cat {input.raw} >> {output.raw_counts}
-        cat {input.trim} >> {output.trim_counts}
+        # Lê as reads brutas
+        for f in input.raw:
+            with open(f, 'r') as file:
+                parts = file.read().strip().split()
+                if len(parts) >= 2:
+                    ind = parts[0]
+                    raw_reads = int(parts[1])
+                    stats[ind] = {'raw': raw_reads, 'trim': 0}
+
+        # Lê as reads após o trimming
+        for f in input.trim:
+            with open(f, 'r') as file:
+                parts = file.read().strip().split()
+                if len(parts) >= 2:
+                    ind = parts[0]
+                    trim_reads = int(parts[1])
+                    if ind in stats:
+                        stats[ind]['trim'] = trim_reads
+
+        # Escreve a tabela com os cálculos matemáticos já resolvidos
+        with open(output.qc_table, 'w') as out:
+            # Cabeçalho da tabela igual ao do seu Excel
+            out.write("targetid\tRaw_reads\tTrimmed_Reads_Q30L50\tinitial_loss\t%_kept\n")
+            
+            for ind in sorted(stats.keys()):
+                raw = stats[ind]['raw']
+                trim = stats[ind]['trim']
+                loss = raw - trim
+                pct = (trim / raw * 100) if raw > 0 else 0
+                
+                out.write(f"{ind}\t{raw}\t{trim}\t{loss}\t{pct:.2f}\n")
         """
