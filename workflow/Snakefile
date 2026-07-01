@@ -3,16 +3,12 @@ configfile: "config/config.yaml"
 # Escaneia automaticamente todos os arquivos da Illumina colados na pasta
 INDS = glob_wildcards("data/raw/reads/{ind}.FASTQ.gz").ind
 
-def nicotiana_docker_run(image, cmd):
-    return f"docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) {image} {cmd}"
-
 # --- REGRA ALVO DO STEP 1 ---
 rule all:
     input:
         expand("results/qc/fastqc/raw/{ind}", ind=INDS),
         expand("results/qc/fastqc/trimmed/{ind}", ind=INDS),
         "results/qc/QC_control_table.tsv"
-
 
 # ==========================================
 # 01 STEP: RAW STAT ASSESSMENT
@@ -32,7 +28,6 @@ rule fastq_stats_raw:
     output: "results/qc/stats/raw/{ind}.RAW_stats.txt"
     shell: 
         """
-        # Extrai a linha 'reads', formata tabulado com o nome da amostra e salva
         docker run --rm -i -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0 \
         sh -c "fastq-stats {input} | grep '^reads' | awk -v smp='{wildcards.ind}' '{{print smp \\\"\\\\t\\\" \\$2}}' > {output}"
         """
@@ -47,11 +42,9 @@ rule fastq_mcf:
     output: "results/trimmed/reads/{ind}.trimmed.fastq.gz"
     shell: 
         """
-        # 1. O fastq-mcf faz a limpeza e salva descompactado (evitando o bug gzclose do Docker/Windows)
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0 \
         fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o results/trimmed/reads/{wildcards.ind}.trimmed.fastq
         
-        # 2. O gzip nativo comprime o arquivo final de forma segura para satisfazer o output
         gzip -f results/trimmed/reads/{wildcards.ind}.trimmed.fastq
         """
 
@@ -89,7 +82,6 @@ rule merge_stats:
     run:
         stats = {}
         
-        # Lê as reads brutas
         for f in input.raw:
             with open(f, 'r') as file:
                 parts = file.read().strip().split()
@@ -98,7 +90,6 @@ rule merge_stats:
                     raw_reads = int(parts[1])
                     stats[ind] = {'raw': raw_reads, 'trim': 0}
 
-        # Lê as reads após o trimming
         for f in input.trim:
             with open(f, 'r') as file:
                 parts = file.read().strip().split()
@@ -108,9 +99,7 @@ rule merge_stats:
                     if ind in stats:
                         stats[ind]['trim'] = trim_reads
 
-        # Escreve a tabela com os cálculos matemáticos já resolvidos
         with open(output.qc_table, 'w') as out:
-            # Cabeçalho da tabela igual ao do seu Excel
             out.write("targetid\tRaw_reads\tTrimmed_Reads_Q30L50\tinitial_loss\t%_kept\n")
             
             for ind in sorted(stats.keys()):
@@ -120,4 +109,3 @@ rule merge_stats:
                 pct = (trim / raw * 100) if raw > 0 else 0
                 
                 out.write(f"{ind}\t{raw}\t{trim}\t{loss}\t{pct:.2f}\n")
-        """
