@@ -38,7 +38,7 @@ rule fastq_stats_raw:
         """
 
 # ==========================================
-# 02 STEP: TRIMMING (M_TRIM2)
+# 02 STEP: TRIMMING (M_TRIM2 COM BYPASS DE I/O NO WINDOWS)
 # ==========================================
 rule fastq_mcf:
     input: 
@@ -47,8 +47,12 @@ rule fastq_mcf:
     output: "results/trimmed/reads/{ind}.trimmed.fastq.gz"
     shell: 
         """
+        # 1. O fastq-mcf faz a limpeza e salva descompactado (evitando o bug gzclose do Docker/Windows)
         docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0 \
-        fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}
+        fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o results/trimmed/reads/{wildcards.ind}.trimmed.fastq
+        
+        # 2. O gzip nativo comprime o arquivo final de forma segura para satisfazer o output
+        gzip -f results/trimmed/reads/{wildcards.ind}.trimmed.fastq
         """
 
 # ==========================================
