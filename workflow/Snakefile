@@ -1,77 +1,23 @@
 configfile: "config/config.yaml"
-# esse é o arquivo mestre do snakemake, ele roda tudo, cada etapa em um container para facilitar o scaling e distribuição das atividades nos cores do(s) processador(es) em um servidor ou PC
-# cada rule é uma etapa, nós providenciamos o ouput que queremos (na rule all), e ele vai definir o caminho do ouput até o input, define a árvore de atividades para gerar o output e começa as tarefas.
-# Se cair a luz no meio ele recomeça de onde parou; se especificarmos um output no meio ele para lá, se já dermos as reads mapeadas, ele vai começar dali.
 
-# SUMARIO DESTAUALIZADO
-# glob_wildcards----------------- Escaneia as pastas e roda a matriz com base no que tá lá + checa o arquivo de config
-# rule_all ---------------------- Solicita ao sistema o multiqQC report, os .vcfs, .vchk, .eigenvec e pcas (.pdf) para cada combinação de FOCALS e OUTGROUPS existente nas 9 iterações
-# rule indexar_bwa--------------- Output: .bwt, .pac, .ann, .amb, .sa 
-# rule indexar_samtools_fai------ Output: fasta.fai
-# rule criar_dicionario_gatk ---- Output: .dict
-# rule fastqc_raw / trimmed------ Output: HTML reports de qualidade das reads brutas e processadas
-# rule fastq_mcf_trim_...-------- Output: fastq com trimming de qualidade (Phred 30)
-# rule mapeamento_focal---------- Output: focal.sorted.bam
-# rule mapeamento_outgroups------ Output: outgroup.sorted.bam
-# rule samtools_stats_...-------- Output: .stats
-# rule bamaddrg_merge------------ Output: .unified.bam (unificação dos indivíduos para o Freebayes)
-# rule freebayes_joint----------- Output: x.freebayes.vcf (Genotipagem conjunta)
-# rule filtragem_vcf------------- Output: x.filtered.vcf 
-# rule multiqc------------------- Output: MultiQC report consolidado
-# rule vcf_stats----------------- Output: .vchk e vcf stats
-# rule pca_plink----------------- Output: .eigenvec e .engenval (vetores)
-# rule plot_pca------------------ Output: plot PCA
-configfile: "config/config.yaml"
-configfile: "config/config.yaml"
-
-# --- VARIÁVEIS CHAVE ---
-REFERENCES = glob_wildcards("data/raw/reference/{ref}/{ref_file}.fasta").ref
-OUTGROUPS = glob_wildcards("data/raw/outgroup/{outgroup}/{outgroup_file}.FASTQ.gz").outgroup
+# Escaneia automaticamente todos os arquivos da Illumina colados na pasta
 INDS = glob_wildcards("data/raw/reads/{ind}.FASTQ.gz").ind
 
 def nicotiana_docker_run(image, cmd):
     return f"docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) {image} {cmd}"
 
-def get_bamaddrg_flags(wildcards, input):
-    flags = []
-    for bam in input.bams_foc:
-        ind = bam.split('/')[-1].split('.')[1]
-        flags.append(f"-b {bam} -s {ind}")
-    flags.append(f"-b {input.bam_out} -s {wildcards.outgroup}")
-    return " ".join(flags)
-
-# --- REGRA ALVO ---
+# --- REGRA ALVO DO STEP 1 ---
 rule all:
     input:
-        expand("results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf", reference=REFERENCES, outgroup=OUTGROUPS),
-        "results/qc/multiqc_report.html", 
-        expand("results/qc/vcf_stats/{reference}.{outgroup}.freebayes.vchk", reference=REFERENCES, outgroup=OUTGROUPS),
-        expand("results/pca/{reference}.{outgroup}.freebayes.eigenvec", reference=REFERENCES, outgroup=OUTGROUPS),
-        expand("results/qc/pca_plots/{reference}.{outgroup}.freebayes_pca.pdf", reference=REFERENCES, outgroup=OUTGROUPS)
+        expand("results/qc/fastqc/raw/{ind}", ind=INDS),
+        expand("results/qc/fastqc/trimmed/{ind}", ind=INDS),
+        "results/qc/read_counts.txt",
+        "results/qc/trimmed_count.txt"
 
-# --- INDEXAÇÕES DA REFERÊNCIA ---
-rule indexar_bwa:
-    input: "data/raw/reference/{reference}/{reference}.fasta"
-    output:
-        bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
-        pac="data/raw/reference/{reference}/{reference}.fasta.pac",
-        ann="data/raw/reference/{reference}/{reference}.fasta.ann",
-        amb="data/raw/reference/{reference}/{reference}.fasta.amb",
-        sa="data/raw/reference/{reference}/{reference}.fasta.sa"
-    shell: nicotiana_docker_run("staphb/bwa:0.7.17", "bwa index {input}")
-
-rule indexar_samtools_fai:
-    input: "data/raw/reference/{reference}/{reference}.fasta"
-    output: "data/raw/reference/{reference}/{reference}.fasta.fai"
-    shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools faidx {input}")
-
-rule criar_dicionario_gatk:
-    input: "data/raw/reference/{reference}/{reference}.fasta"
-    output: "data/raw/reference/{reference}/{reference}.dict"
-    shell: nicotiana_docker_run("broadinstitute/gatk:4.4.0.0", "gatk CreateSequenceDictionary -R {input} -O {output}")
-
-# --- FASTQC RAW (SINGLE-END) ---
-rule fastqc_raw_focal:
+# ==========================================
+# 01 STEP: RAW STAT ASSESSMENT
+# ==========================================
+rule fastqc_raw:
     input: "data/raw/reads/{ind}.FASTQ.gz"
     output: out_dir=directory("results/qc/fastqc/raw/{ind}")
     shell: 
@@ -81,33 +27,34 @@ rule fastqc_raw_focal:
         fastqc -q {input} -o {output.out_dir}
         """
 
-rule fastqc_raw_outgroup:
-    input: "data/raw/outgroup/{outgroup}/{outgroup}.FASTQ.gz"
-    output: out_dir=directory("results/qc/fastqc/raw/{outgroup}")
+rule fastq_stats_raw:
+    input: "data/raw/reads/{ind}.FASTQ.gz"
+    output: "results/qc/stats/raw/{ind}.RAW_stats.txt"
     shell: 
         """
-        mkdir -p {output.out_dir}
-        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/fastqc:0.12.1 \
-        fastqc -q {input} -o {output.out_dir}
+        # Extrai a linha 'reads', formata tabulado com o nome da amostra e salva
+        docker run --rm -i -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0 \
+        sh -c "fastq-stats {input} | grep '^reads' | awk -v smp='{wildcards.ind}' '{{print smp \\\"\\\\t\\\" \\$2}}' > {output}"
         """
 
-# --- LIMPEZA M_TRIM2 (SINGLE-END COM ARQUIVO DE ADAPTADORES) ---
-rule fastq_mcf_focal:
+# ==========================================
+# 02 STEP: TRIMMING (M_TRIM2)
+# ==========================================
+rule fastq_mcf:
     input: 
         read="data/raw/reads/{ind}.FASTQ.gz",
         adapter="data/raw/illumina_adapter.fasta"
     output: "results/trimmed/reads/{ind}.trimmed.fastq.gz"
-    shell: nicotiana_docker_run("quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0", "fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}")
+    shell: 
+        """
+        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0 \
+        fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}
+        """
 
-rule fastq_mcf_outgroup:
-    input: 
-        read="data/raw/outgroup/{outgroup}/{outgroup}.FASTQ.gz",
-        adapter="data/raw/illumina_adapter.fasta"
-    output: "results/trimmed/outgroup/{outgroup}.trimmed.fastq.gz"
-    shell: nicotiana_docker_run("quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0", "fastq-mcf -q 30 -l 50 {input.adapter} {input.read} -o {output}")
-
-# --- FASTQC TRIMMED ---
-rule fastqc_trimmed_focal:
+# ==========================================
+# 03 STEP: TRIMMED STAT ASSESSMENT
+# ==========================================
+rule fastqc_trimmed:
     input: "results/trimmed/reads/{ind}.trimmed.fastq.gz"
     output: out_dir=directory("results/qc/fastqc/trimmed/{ind}")
     shell: 
@@ -117,142 +64,32 @@ rule fastqc_trimmed_focal:
         fastqc -q {input} -o {output.out_dir}
         """
 
-rule fastqc_trimmed_outgroup:
-    input: "results/trimmed/outgroup/{outgroup}.trimmed.fastq.gz"
-    output: out_dir=directory("results/qc/fastqc/trimmed/{outgroup}")
+rule fastq_stats_trimmed:
+    input: "results/trimmed/reads/{ind}.trimmed.fastq.gz"
+    output: "results/qc/stats/trimmed/{ind}.q30l50_stats.txt"
     shell: 
         """
-        mkdir -p {output.out_dir}
-        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/fastqc:0.12.1 \
-        fastqc -q {input} -o {output.out_dir}
+        docker run --rm -i -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) quay.io/biocontainers/ea-utils:1.1.2.779--h9dd4a16_0 \
+        sh -c "fastq-stats {input} | grep '^reads' | awk -v smp='{wildcards.ind}' '{{print smp \\\"\\\\t\\\" \\$2}}' > {output}"
         """
 
-# --- MAPEAMENTO SINGLE-END (-F 4) ---
-rule mapeamento_focal:
+# ==========================================
+# AGGREGAÇÃO (SUBSTITUI O LAÇO 'FOR' DO BASH)
+# ==========================================
+rule merge_stats:
     input:
-        fasta="data/raw/reference/{reference}/{reference}.fasta",
-        bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
-        read="results/trimmed/reads/{ind}.trimmed.fastq.gz"
+        raw=expand("results/qc/stats/raw/{ind}.RAW_stats.txt", ind=INDS),
+        trim=expand("results/qc/stats/trimmed/{ind}.q30l50_stats.txt", ind=INDS)
     output:
-        bam="results/mapping/focal/{reference}.{ind}.sorted.bam"
+        raw_counts="results/qc/read_counts.txt",
+        trim_counts="results/qc/trimmed_count.txt"
     shell:
         """
-        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
-        bwa mem -R "@RG\\tID:{wildcards.ind}\\tSM:{wildcards.ind}\\tPL:ILLUMINA" {input.fasta} {input.read} | \
-        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
-        samtools view -F 4 -Sb - | \
-        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
-        samtools sort -o {output.bam} -
-        """
-
-rule mapeamento_outgroup:
-    input:
-        fasta="data/raw/reference/{reference}/{reference}.fasta",
-        bwt="data/raw/reference/{reference}/{reference}.fasta.bwt",
-        read="results/trimmed/outgroup/{outgroup}.trimmed.fastq.gz"
-    output:
-        bam="results/mapping/outgroup/{reference}.{outgroup}.sorted.bam"
-    shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/bwa:0.7.17 \
-        bwa mem -R "@RG\\tID:{wildcards.outgroup}\\tSM:{wildcards.outgroup}\\tPL:ILLUMINA" {input.fasta} {input.read} | \
-        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
-        samtools view -F 4 -Sb - | \
-        docker run -i --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) staphb/samtools:1.17 \
-        samtools sort -o {output.bam} -
-        """
-
-# --- STATS DOS MAPEAMENTOS ---
-rule samtools_stats_focal:
-    input: bam="results/mapping/focal/{reference}.{ind}.sorted.bam"
-    output: stats="results/qc/stats/focal/{reference}.{ind}.stats"
-    shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
-
-rule samtools_stats_outgroup:
-    input: bam="results/mapping/outgroup/{reference}.{outgroup}.sorted.bam"
-    output: stats="results/qc/stats/outgroup/{reference}.{outgroup}.stats"
-    shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools stats {input.bam} > {output.stats}")
-
-# --- UNIFICAÇÃO (BAMADDRG) ---
-rule bamaddrg_merge:
-    input:
-        bams_foc=expand("results/mapping/focal/{{reference}}.{ind}.sorted.bam", ind=INDS),
-        bam_out="results/mapping/outgroup/{reference}.{outgroup}.sorted.bam"
-    output:
-        bam="results/mapping/unified/{reference}.{outgroup}.unified.bam"
-    params:
-        flags=get_bamaddrg_flags
-    shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v $(pwd):$(pwd) -w $(pwd) biocontainers/bamaddrg:v0.0.1-4-deb-py3_cv1 \
-        bamaddrg {params.flags} > {output.bam}
-        """
-
-rule indexar_bam_unified:
-    input: "results/mapping/unified/{reference}.{outgroup}.unified.bam"
-    output: "results/mapping/unified/{reference}.{outgroup}.unified.bam.bai"
-    shell: nicotiana_docker_run("staphb/samtools:1.17", "samtools index {input}")
-
-# --- GENOTIPAGEM CONJUNTA (JOINT CALLING) ---
-rule freebayes_joint:
-    input:
-        fasta="data/raw/reference/{reference}/{reference}.fasta",
-        fai="data/raw/reference/{reference}/{reference}.fasta.fai",
-        bam="results/mapping/unified/{reference}.{outgroup}.unified.bam",
-        bai="results/mapping/unified/{reference}.{outgroup}.unified.bam.bai"
-    output:
-        vcf="results/vcf/{reference}.{outgroup}.freebayes.vcf"
-    shell: nicotiana_docker_run("staphb/freebayes:1.3.6", "freebayes -f {input.fasta} {input.bam} > {output.vcf}")
-
-# --- FILTRAGEM DE VARIANTES (HARD FILTERING) ---
-rule filtragem_vcf:
-    input: vcf="results/vcf/{reference}.{outgroup}.freebayes.vcf"
-    output: vcf_filt="results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf"
-    shell: nicotiana_docker_run("staphb/bcftools:1.17", "bcftools filter -i 'QUAL>30' {input.vcf} > {output.vcf_filt}")
-
-# --- MULTIQC ---
-rule multiqc:
-    input:
-        stats_foc=expand("results/qc/stats/focal/{reference}.{ind}.stats", reference=REFERENCES, ind=INDS),
-        stats_out=expand("results/qc/stats/outgroup/{reference}.{outgroup}.stats", reference=REFERENCES, outgroup=OUTGROUPS),
-        fqc_raw_foc=expand("results/qc/fastqc/raw/{ind}", ind=INDS),
-        fqc_raw_out=expand("results/qc/fastqc/raw/{outgroup}", outgroup=OUTGROUPS),
-        fqc_trim_foc=expand("results/qc/fastqc/trimmed/{ind}", ind=INDS),
-        fqc_trim_out=expand("results/qc/fastqc/trimmed/{outgroup}", outgroup=OUTGROUPS)
-    output:
-        html="results/qc/multiqc_report.html"
-    shell: nicotiana_docker_run("staphb/multiqc:1.14", "multiqc results/qc/ results/trimmed/ -o results/qc/")
-
-# --- GRÁFICOS E PCA ---
-rule vcf_stats:
-    input: vcf="results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf"
-    output:
-        stats="results/qc/vcf_stats/{reference}.{outgroup}.freebayes.vchk",
-        plot_dir=directory("results/qc/vcf_stats/plots_{reference}_{outgroup}")
-    shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/bcftools:1.17 \
-        bcftools stats {input.vcf} > {output.stats}
+        # Adiciona os cabeçalhos para o Excel
+        echo -e "sample\\ttotal_RAW_reads" > {output.raw_counts}
+        echo -e "sample\\tq30_l50_kept" > {output.trim_counts}
         
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/bcftools:1.17 \
-        plot-vcfstats -p {output.plot_dir} {output.stats}
+        # Concatena todos os arquivos intermediários
+        cat {input.raw} >> {output.raw_counts}
+        cat {input.trim} >> {output.trim_counts}
         """
-
-rule pca_plink:
-    input: vcf="results/vcf_filtered/{reference}.{outgroup}.freebayes.filtered.vcf"
-    output:
-        eigenval="results/pca/{reference}.{outgroup}.freebayes.eigenval",
-        eigenvec="results/pca/{reference}.{outgroup}.freebayes.eigenvec"
-    params:
-        out_prefix="results/pca/{reference}.{outgroup}.freebayes"
-    shell:
-        """
-        docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":"$(pwd)" -w "$(pwd)" staphb/plink:1.90b6.21 \
-        plink --vcf-half-call m --vcf {input.vcf} --double-id --allow-extra-chr --set-missing-var-ids @:# \
-        --pca --out {params.out_prefix}
-        """
-
-rule plot_pca:
-    input: eigenvec="results/pca/{reference}.{outgroup}.freebayes.eigenvec"
-    output: pdf="results/qc/pca_plots/{reference}.{outgroup}.freebayes_pca.pdf"
-    shell: nicotiana_docker_run("rocker/tidyverse:4.3.1", "Rscript scripts/plot_pca.R {input.eigenvec} {output.pdf}")
