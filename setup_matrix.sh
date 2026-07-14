@@ -7,11 +7,7 @@ mkdir -p data/raw/reads  # PASTA PARA AS SUAS READS DA ILLUMINA
 echo "Gerando banco de adaptadores universais Illumina..."
 cat << 'EOF' > data/raw/illumina_adapter.fasta
 >Illumina_Universal_Adapter
-AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTA
->Illumina_Small_RNA_3p_Adapter
-TGGAATTCTCGGGTGCCAAGG
->Nextera_Transposase_Sequence
-CTGTCTCTTATACACATCT
+ACACTTAGGTTCCGTGCAG
 EOF
 
 # ==========================================
