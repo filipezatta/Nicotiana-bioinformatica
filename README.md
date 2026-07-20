@@ -1,88 +1,91 @@
-# Nicotiana-bioinformatica
-por enquanto pipeline de teste nos resultados para diferentes genotypers,outgroups,references.
+🧬 Nicotiana Bioinformática Wiki
+Bem-vindo à documentação oficial do pipeline analítico desenvolvido para o processamento de dados genômicos e populacionais de espécies do gênero Nicotiana, utilizando a abordagem de redução de complexidade (estilo DArTseq/RADseq).
 
+📑 Sumário da Documentação
+Visão Geral da Arquitetura
 
-Este repositório documenta a infraestrutura como código desenvolvida para o processamento de genomas híbridos do gênero Nicotiana. O sistema automatiza o alinhamento de sequências curtas (reads) e a chamada de variantes (Variant Calling), processando iterativamente múltiplas referências contra múltiplos grupos externos (outgroups).
-1. Arquitetura de Diretórios e Regras de Inferência
+Estrutura de Diretórios do Repositório
 
-O pipeline utiliza a função glob_wildcards do Snakemake para inferir dinamicamente a matriz de processamento com base na estrutura de pastas.
+Componentes e Stack Tecnológica
 
-Aviso crítico: O sistema depende estritamente da nomenclatura abaixo. A quebra desse padrão (ex: arquivos fora das pastas designadas ou erros de digitação nos nomes) impedirá o Snakemake de montar o Grafo Acíclico Direcionado (DAG) e o pipeline falhará.
+Fluxo de Execução (Pipeline Step-by-Step)
+
+Automação de Resultados e Integração Contínua
+
+Guia de Operação e Comandos de Uso
+
+🏗️ 1. Visão Geral da Arquitetura
+O pipeline foi desenhado sob os princípios de reprodutibilidade, portabilidade e isolamento de ambiente. Utiliza o Snakemake como motor de gerenciamento de dependências direcionadas (DAG) e o Docker em conjunto com o ecossistema Biocontainers para executar cada ferramenta computacional em seu próprio contêiner isolado, eliminando conflitos de pacotes no sistema operacional hospedeiro.
+
+📂 2. Estrutura de Diretórios do Repositório
+A organização do projeto segue padrões rigorosos de bioinformática para garantir a separação entre dados brutos, códigos de controle e resultados gerados:
+
 Plaintext
-
-projeto_hibridos/
-├── config/
-│   └── config.yaml          # Define parâmetros booleanos e listas (Genotipadores, QC)
+├── config/                  # Arquivos de parametrização global do pipeline
 ├── data/
 │   └── raw/
-│       ├── input/           # Subpastas nomeadas por amostra contendo reads paired-end (.fastq)
-│       └── reference/       # Subpastas nomeadas por espécie contendo o genoma (.fasta)
-├── results/
-│   ├── mapping/             # Arquivos alinhados (.bam) e seus índices (.bai)
-│   ├── vcf/                 # Arquivos de variantes gerados
-│   └── qc/                  # Arquivos de estatísticas e relatórios html
-└── workflow/
-    └── Snakefile            # O código fonte do orquestrador
+│       ├── reads/           # Armazenamento obrigatório das bibliotecas .FASTQ.gz brutas da Illumina
+│       └── illumina_adapter.fasta # Sequências de adaptadores sintéticos para filtragem
+├── workflow/
+│   └── Snakefile            # O núcleo do orquestrador (regras, dependências e scripts em Python)
+├── enviar_resultados.sh     # Automação de sincronização e envio de relatórios ao GitHub
+├── iniciar_pipeline.sh      # Script mestre de inicialização do orquestrador
+└── setup_matrix.sh          # Script de estruturação física inicial do diretório
+🛠️ 3. Componentes e Stack Tecnológica
+O pipeline integra ferramentas validadas pela comunidade científica de bioinformática:
 
-2. Ferramentas e Contêineres Utilizados
+Snakemake: Orquestrador de fluxos de trabalho baseado em Python, responsável por calcular o caminho crítico de execução e paralelizar os processos.
 
-Para garantir reprodutibilidade, nenhuma ferramenta genômica é instalada nativamente no sistema operacional hospedeiro. O pipeline invoca contêineres Docker isolados para cada processo.
+Docker & Biocontainers: Camada de virtualização leve que abriga ferramentas isoladas (FastQC, ea-utils, BWA, Samtools, Freebayes, Bcftools, PLINK).
 
-    Snakemake: O orquestrador principal. Ele analisa a regra final (rule all) e trabalha de trás para frente, determinando quais etapas precisam ser executadas com base nos arquivos presentes ou ausentes no disco. Ele paralela trabalhos automaticamente e evita o reprocessamento de arquivos que não foram alterados.
+FastQC: Software de inspeção visual e estatística da qualidade das bases de sequenciamento bruto e limpo.
 
-    BWA-MEM (v0.7.17): Algoritmo de alinhamento projetado para reads da Illumina. Utiliza a Transformada de Burrows-Wheeler para encontrar rapidamente a posição de origem de cada fragmento no genoma de referência. É resiliente a mismatches e pequenos indels (inserções/deleções).
+EA-Utils (fastq-mcf): Ferramenta de alta performance para o corte (trimming) de adaptadores sintéticos e filtragem por qualidade Phred.
 
-    Samtools (v1.17): Utilitário essencial para interagir com dados de sequenciamento de alto rendimento. Neste pipeline, é responsável por traduzir dados brutos (SAM) para formato binário comprimido (BAM), ordenar as reads por coordenada cromossômica e construir índices de acesso rápido (.bai, .fai).
+BWA-MEM: Alinhador de sequências curtas de DNA altamente eficiente contra genomas de referência complexos.
 
-    GATK HaplotypeCaller (v4.4.0.0): Algoritmo padrão-ouro do Broad Institute para identificação de SNPs e Indels. Em vez de avaliar nucleotídeo por nucleotídeo, ele identifica regiões ativas com mutações e realiza uma montagem de novo (de-novo assembly) local dos haplótipos. É altamente rigoroso quanto à formatação do arquivo de entrada (exige Read Groups e arquivos de dicionário).
+SAMtools: Manipulação, ordenação, filtragem e indexação de arquivos de alinhamento binário (BAM/SAM).
 
-    Freebayes (v1.3.6): Genotipador baseado em haplótipos probabilísticos. Diferente do GATK, ele consegue detectar polimorfismos de nucleotídeo múltiplo (MNPs) e eventos complexos avaliando o alinhamento de forma direta, ignorando suposições de ploidia engessadas.
+Freebayes: Caller de variantes genéticas baseado em haplótipos e estatística Bayesiana, ideal para dados de populações vegetais e cortes enzimáticos.
 
-    MultiQC: Analisador de logs. Escaneia o diretório de saídas e compila as estatísticas brutas do Samtools (e outras ferramentas) em um relatório visualização único.
+Bcftools / PLINK / R (Tidyverse): Pós-processamento de variantes, filtragem de qualidade de genótipos, cálculo de distâncias genéticas e geração de componentes principais (PCA).
 
-3. Etapas de Processamento (Snakemake Workflow)
+🔄 4. Fluxo de Execução (Pipeline Step-by-Step)
+O processamento computacional divide-se em fases encadeadas de forma inteligente pelo Snakemake:
 
-A execução do arquivo Snakefile segue uma ordem cronológica estrita de dependências:
-Etapa 1: Leitura de Configurações e Inferência de Alvos
+Fase 1: Controle de Qualidade Inicial (Raw QC)
+FastQC Raw: Varre cada arquivo .FASTQ.gz bruto na pasta de entradas para gerar métricas de distribuição de qualidade por base, conteúdo GC e presença de adaptadores.
 
-O Snakemake lê o arquivo config.yaml para determinar quais genotipadores estão ativos. Em seguida, mapeia as pastas em data/raw/reference/ e data/raw/input/ para construir a matriz (ex: Referência A cruzada com Outgroup X, Y e Z). A rule all dita que o objetivo final é a presença de todos os arquivos .vcf resultantes dessa matriz cruzada.
-Etapa 2: Download Dinâmico (Condicional)
+Extração de Estatísticas Brutas: Extrai o quantitativo total de sequências originais por indivíduo para auditoria laboratorial.
 
-Se o pipeline detectar que o arquivo FASTA da referência está ausente, a regra baixar_referencias é acionada. O genoma é baixado via FTP oficial do NCBI e descompactado no diretório adequado.
-Etapa 3: Preparação do Genoma (Indexação)
+Fase 2: Limpeza e Filtragem (Trimming)
+Fastq-mcf: Compara as sequências brutas contra o arquivo de adaptadores oficial (illumina_adapter.fasta), eliminando sequências curtas e bases com escore Phred inferior aos parâmetros definidos.
 
-Antes que qualquer mapeamento ou chamada de variantes ocorra, a referência deve ser indexada em três formatos distintos:
+Fase 3: Controle de Qualidade Pós-Processamento
+FastQC Trimmed & Stats: Reavalia as sequências limpas, computando a taxa de retenção real de reads e gerando a matriz consolidada de controle (QC_control_table.tsv).
 
-    rule indexar_bwa: Gera os índices estruturais (.bwt, .pac, .ann, etc.) necessários para que o algoritmo de alinhamento funcione.
+🚀 5. Automação de Resultados e Integração Contínua
+O pipeline conta com gatilhos de automação pós-execução (onsuccess):
 
-    rule indexar_samtools_fai: Cria um índice .fai do arquivo FASTA, permitindo que ferramentas leiam cromossomos específicos sem carregar o genoma inteiro na RAM.
+Assim que a regra final de agregação e relatórios é concluída com sucesso, o script enviar_resultados.sh é acionado de forma autônoma.
 
-    rule criar_dicionario_gatk: Cria um arquivo .dict, que é uma exigência estrita e exclusiva do GATK contendo o tamanho e nome dos contigs.
+Os arquivos essenciais de controle (tabelas de perdas de reads, logs do Snakemake e relatórios HTML de exemplo da amostra de referência) são compactados, copiados e sincronizados diretamente com o repositório remoto via git push.
 
-Etapa 4: Mapeamento e Ordenação Simultânea
+💻 6. Guia de Operação e Comandos de Uso
+Para executar o pipeline em um ambiente local com suporte a Docker ativado:
 
-A rule mapeamento_bwa é o núcleo de processamento intensivo.
+Insira os dados brutos:
+Transfira os arquivos .FASTQ.gz da Illumina para o diretório correspondente:
 
-    O BWA-MEM alinha as reads Paired-End contra o genoma.
-
-    Durante a execução, o parâmetro -R injeta a etiqueta de identificação de amostra (Read Group @RG) no cabeçalho.
-
-    O fluxo de dados (pipe |) envia a saída padrão diretamente para o samtools sort. O arquivo .sam intermediário nunca é escrito no disco, economizando dezenas de Gigabytes. O arquivo final .sorted.bam é salvo na pasta results/mapping/.
-
-Etapa 5: Indexação do Alinhamento
-
-A rule indexar_bam executa samtools index sobre os arquivos .sorted.bam. Isso gera um arquivo .bai. Sem este arquivo, os genotipadores não conseguem particionar a busca de mutações, resultando em erro.
-Etapa 6: Chamada de Variantes (Genotipagem)
-
-Duas regras processam os mesmos dados em paralelo, gerando abordagens estatísticas diferentes:
-
-    rule freebayes: Lê a referência e o arquivo BAM, extraindo diretamente as variantes para o arquivo .vcf.
-
-    rule gatk_haplotype_caller: Valida a presença do .fai e do .dict, lê o BAM contendo os Read Groups criados na Etapa 4 e gera a sua versão independente do arquivo .vcf.
-
-4. Execução do Sistema
-
-Para acionar a matriz completa de processamento, utilize o comando abaixo. A tag --cores define quantos threads do sistema o Snakemake está autorizado a alocar para paralelizamento de regras.
 Bash
+data/raw/reads/
+Valide o adaptador:
+Certifique-se de que o arquivo de adaptadores está configurado corretamente em:
 
-snakemake --cores all -s workflow/Snakefile
+Bash
+data/raw/illumina_adapter.fasta
+Dispare o Orquestrador:
+Execute o script mestre no terminal Linux ou Git Bash (assegurando que o Docker Desktop esteja rodando):
+
+Bash
+./iniciar_pipeline.sh
