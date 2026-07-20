@@ -4,11 +4,11 @@ set -e
 echo "Criando árvore de diretórios base..."
 mkdir -p data/raw/reads  # PASTA PARA AS SUAS READS DA ILLUMINA
 
-echo "Gerando banco de adaptadores universais Illumina..."
-cat << 'EOF' > data/raw/illumina_adapter.fasta
->Illumina_Universal_Adapter
-AGATCGGAAGAG
-EOF
+#echo "Gerando banco de adaptadores universais Illumina..."
+#cat << 'EOF' > data/raw/illumina_adapter.fasta
+#>Illumina_Universal_Adapter
+#AGATCGGAAGAG
+#EOF
 
 # ==========================================
 # SEÇÃO SUSPENSA PARA O STEP 1 (APENAS QC)
