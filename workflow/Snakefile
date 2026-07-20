@@ -109,3 +109,9 @@ rule merge_stats:
                 pct = (trim / raw * 100) if raw > 0 else 0
                 
                 out.write(f"{ind}\t{raw}\t{trim}\t{loss}\t{pct:.2f}\n")
+# ==========================================
+# GATILHO DE SUCESSO (AUTOMATIZAÇÃO GITHUB)
+# ==========================================
+onsuccess:
+    print("Pipeline concluído com sucesso! Disparando o robô do GitHub...")
+    shell("bash enviar_resultados.sh")
