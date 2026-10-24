@@ -2,7 +2,7 @@
 
 Pipeline reprodutível para o processamento de dados de genotipagem por representação reduzida (DArTseq) de espécies de *Nicotiana* sect. *Alatae*, desenvolvido para o Trabalho de Conclusão de Curso **"A escolha metodológica importa para a inferência de introgressão? Um teste em zonas híbridas de *Nicotiana*"** (Filipe Backes Zatta).
 
-O objetivo do pipeline é processar um mesmo conjunto de leituras sob diferentes combinações de **genoma de referência**, **genotipador** (*variant caller*) e **grupo externo**, mantendo todos os demais parâmetros constantes, para medir o efeito dessas escolhas sobre as inferências de estrutura populacional, hibridação e introgressão. O cenário de referência reproduz o pipeline de Couto *et al.* (2026, *Annals of Botany*, doi:[10.1093/aob/mcag083](https://doi.org/10.1093/aob/mcag083)).
+O objetivo do pipeline é processar um mesmo conjunto de leituras sob diferentes combinações de **genoma de referência** e **grupo externo**, mantendo todos os demais parâmetros constantes (inclusive o genotipador, FreeBayes), para medir o efeito dessas escolhas sobre as inferências de estrutura populacional, hibridação e introgressão. O cenário de referência reproduz o pipeline de Couto *et al.* (2026, *Annals of Botany*, doi:[10.1093/aob/mcag083](https://doi.org/10.1093/aob/mcag083)).
 
 > **Estado atual:** a etapa 1 (controle de qualidade e filtragem das leituras) está implementada e funcional. As etapas seguintes estão em desenvolvimento; ver [Estado de implementação](#estado-de-implementação).
 
@@ -30,16 +30,15 @@ O objetivo do pipeline é processar um mesmo conjunto de leituras sob diferentes
 | Fator | Níveis |
 |---|---|
 | Genoma de referência | *N. langsdorffii* (sect. *Alatae*) · *N. sylvestris* (Sierro *et al.*, 2024; GCF_000393655.2) · *N. benthamiana* (alotetraploide) · *Petunia axillaris* |
-| Genotipador | FreeBayes · GATK HaplotypeCaller · BCFtools |
 | Grupo externo (testes de introgressão) | *N. bonariensis* (amostras DArTseq) · *N. tomentosiformis* (alelos da montagem genômica) |
 
-Leituras, parâmetros de mapeamento, limiares de qualidade e filtros de SNPs são idênticos entre as combinações. As 12 matrizes de SNPs resultantes (4 referências × 3 genotipadores) são comparadas com o cenário de referência (*N. sylvestris* + FreeBayes + *N. bonariensis*).
+Leituras, parâmetros de mapeamento, chamada de variantes (FreeBayes v1.3.6), limiares de qualidade e filtros de SNPs são idênticos entre as combinações. As 4 matrizes de SNPs resultantes (uma por referência) são comparadas com o cenário de referência (*N. sylvestris* + *N. bonariensis*). Outros genotipadores (GATK, BCFtools) poderão ser incorporados como fator adicional em etapa posterior.
 
 ```mermaid
 flowchart TD
     A[Leituras DArTseq brutas<br/>FASTQ single-end] --> B[QC e filtragem<br/>FastQC · fastq-stats · fastq-mcf]
     B --> C{Genoma de referência<br/>BWA-MEM + SAMtools}
-    C --> D{Genotipador<br/>FreeBayes · GATK · BCFtools}
+    C --> D[Chamada de variantes conjunta<br/>FreeBayes]
     D --> E[Filtragem idêntica<br/>VCFtools · pcadapt]
     E --> F[Escala ampla<br/>PCA · DAPC · ADMIXTURE · FST]
     E --> G{Grupo externo}
@@ -61,9 +60,9 @@ flowchart TD
 | 1. QC das leituras brutas | FastQC, fastq-stats | Implementada |
 | 2. Remoção de adaptadores e filtragem por qualidade (Q30, ≥ 50 pb) | fastq-mcf | Implementada |
 | 3. QC das leituras filtradas e tabela de retenção | FastQC, fastq-stats, Python | Implementada |
-| 4. Download e indexação das referências | NCBI FTP, BWA, SAMtools, GATK | Planejada (rascunho em `setup_matrix.sh`) |
+| 4. Download e indexação das referências | NCBI FTP, BWA, SAMtools | Planejada (rascunho em `setup_matrix.sh`) |
 | 5. Mapeamento, ordenação e métricas | BWA-MEM, SAMtools | Planejada |
-| 6. Chamada de variantes | FreeBayes, GATK, BCFtools | Planejada |
+| 6. Chamada de variantes | FreeBayes | Planejada |
 | 7. Filtragem de SNPs | VCFtools, BCFtools, pcadapt | Planejada |
 | 8. Análises populacionais e comparação | R (SNPRelate, adegenet, hierfstat, vegan), ADMIXTURE, ADMIXTOOLS 2 | Planejada (`workflow/scripts/plot_pca.R`) |
 
@@ -170,7 +169,6 @@ Colunas de `QC_control_table.tsv`:
 ```yaml
 genotypers:
 - freebayes
-- gatk
 qc_steps:
   raw_reads_qc: true
   processed_reads_qc: true
