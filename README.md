@@ -41,17 +41,17 @@ O objetivo do pipeline é processar um mesmo conjunto de leituras em **nove iter
 | 8 | *Petunia axillaris* | FreeBayes | *N. longiflora* |
 | 9 | *Petunia axillaris* | FreeBayes | *N. glauca* |
 
-- **Referências:** *N. sylvestris* (Sierro *et al.*, 2024; RefSeq GCF_000393655.2), *Petunia axillaris* (GenBank) e uma pseudorreferência *de novo* construída a partir das próprias leituras de cada iteração (abordagem dDocent: agrupamento com CD-HIT e mapeamento com BWA-MEM), o que mantém o FreeBayes como genotipador também nesse caso.
+- **Referências:** *N. sylvestris* (Sierro *et al.*, 2024; RefSeq GCF_000393655.2), *Petunia axillaris* (GenBank) e uma abordagem *de novo*, sem genoma externo (estratégia ainda em definição).
 - **Grupos externos:** *N. bonariensis* e *N. longiflora* (sect. *Alatae*) e *N. glauca* (sect. *Noctiflorae*). O grupo externo entra na chamada conjunta de variantes, portanto afeta a iteração inteira, e não apenas os testes de introgressão.
-- **Paralelismo:** cada iteração é um ramo independente do grafo do Snakemake. Apenas as leituras pré-processadas são compartilhadas; mapeamento, chamada, filtragem e análises são executados separadamente, com o mesmo arquivo de configuração.
+- **Paralelismo:** cada iteração é um ramo independente do fluxo do Snakemake. Apenas as leituras pré-processadas são compartilhadas; mapeamento, chamada, filtragem e análises são executados separadamente, com o mesmo arquivo de configuração.
 
 ```mermaid
 flowchart TD
     A[Leituras DArTseq brutas<br/>FASTQ single-end] --> B[QC e filtragem<br/>FastQC · fastq-stats · fastq-mcf]
     B --> C[9 iterações em paralelo<br/>3 referências × 3 grupos externos]
     subgraph P[Pipeline idêntico em cada iteração]
-      D[Obtenção dos locos<br/>BWA-MEM ou pseudorreferência de novo] --> E[Chamada conjunta<br/>FreeBayes · alvo + grupo externo]
-      E --> F[Filtragem<br/>VCFtools · PLINK · pcadapt]
+      D[Obtenção dos locos<br/>BWA-MEM ou de novo (a definir)] --> E[Chamada conjunta<br/>FreeBayes · alvo + grupo externo]
+      E --> F[Filtragem<br/>VCFtools · BCFtools · pcadapt]
       F --> G[Estrutura populacional<br/>PCA · STRUCTURE · ADMIXTURE · NeighborNet · Arlequin]
       G --> H[Híbridos e introgressão<br/>snapclust · NewHybrids · D · fd · HyDe · SNaQ]
     end
@@ -61,7 +61,7 @@ flowchart TD
 
 ## Arquitetura
 
-- **Orquestração:** [Snakemake](https://snakemake.readthedocs.io) v7.32.4. O fluxo é descrito como um grafo de dependências entre arquivos (DAG); amostras e iterações são processadas de forma independente e em paralelo.
+- **Orquestração:** [Snakemake](https://snakemake.readthedocs.io) v7.32.4. O fluxo é descrito como regras ligadas por seus arquivos de entrada e saída; amostras e iterações são processadas de forma independente e em paralelo.
 - **Isolamento de ambiente:** cada regra executa sua ferramenta em um contêiner Docker com versão fixa (imagens BioContainers e StaPH-B). Não é necessário instalar as ferramentas de bioinformática na máquina hospedeira.
 - **Execução do orquestrador:** o próprio Snakemake roda em um contêiner (`snakemake/snakemake:v7.32.4`) com acesso ao socket Docker do hospedeiro (padrão *Docker-outside-of-Docker*), de modo que o pipeline pode ser executado em qualquer máquina com Docker, inclusive Windows (Git Bash) e servidores Linux.
 
@@ -72,13 +72,13 @@ flowchart TD
 | 1. QC das leituras brutas | FastQC, fastq-stats | Implementada |
 | 2. Remoção de adaptadores e filtragem por qualidade (Q30, ≥ 50 pb) | fastq-mcf | Implementada |
 | 3. QC das leituras filtradas e tabela de retenção | FastQC, fastq-stats, Python | Implementada |
-| 4. Download e indexação das referências; pseudorreferência *de novo* | NCBI FTP, BWA, SAMtools, CD-HIT | Planejada (rascunho em `setup_matrix.sh`) |
+| 4. Download e indexação das referências; abordagem *de novo* | NCBI FTP, BWA, SAMtools; *de novo* a definir | Planejada (rascunho em `setup_matrix.sh`) |
 | 5. Mapeamento, ordenação e métricas (por iteração) | BWA-MEM, SAMtools | Planejada |
 | 6. Chamada conjunta de variantes (por iteração) | FreeBayes | Planejada |
-| 7. Filtragem de SNPs, LD e locos sob seleção | VCFtools, BCFtools, PLINK, pcadapt | Planejada |
+| 7. Filtragem de SNPs, LD e locos sob seleção | VCFtools, BCFtools, pcadapt | Planejada |
 | 8. Estrutura populacional | SNPRelate, STRUCTURE, ADMIXTURE, SplitsTree, Arlequin | Planejada (`workflow/scripts/plot_pca.R`) |
 | 9. Híbridos e introgressão | adegenet (snapclust), NewHybrids, introgress, Dsuite, HyDe, PhyloNetworks (SNaQ), ADMIXTOOLS 2 | Planejada |
-| 10. Comparação entre iterações | R (vegan, pophelper, lme4, emmeans) | Planejada |
+| 10. Comparação entre iterações | R (pophelper, lme4) | Planejada |
 
 ## Requisitos
 
@@ -102,7 +102,7 @@ flowchart TD
 │   ├── Snakefile                # Regras do pipeline
 │   ├── scripts/
 │   │   └── plot_pca.R           # Gráfico de PCA a partir de .eigenvec (PLINK)
-│   └── dag.pdf                  # Grafo de dependências atual
+│   └── dag.pdf                  # Diagrama de dependências atual
 ├── iniciar_pipeline.sh          # Ponto de entrada: executa o Snakemake em contêiner
 ├── setup_matrix.sh              # Cria a árvore de diretórios de entrada
 ├── enviar_resultados.sh         # Copia relatórios e faz commit/push (ver abaixo)
@@ -150,7 +150,7 @@ snakemake --cores 4 -s workflow/Snakefile
 # Simulação: lista as tarefas sem executá-las
 snakemake -n -s workflow/Snakefile
 
-# Grafo de dependências
+# Diagrama de dependências entre regras
 snakemake --forceall --dag      -s workflow/Snakefile | dot -Tpdf > workflow/dag.pdf
 snakemake --forceall --rulegraph -s workflow/Snakefile | dot -Tpdf > rulegraph.pdf
 ```
