@@ -2,7 +2,7 @@
 
 Pipeline reprodutível para o processamento de dados de genotipagem por representação reduzida (DArTseq) de espécies de *Nicotiana* sect. *Alatae*, desenvolvido para o Trabalho de Conclusão de Curso **"A escolha metodológica importa para a inferência de introgressão? Um teste em zonas híbridas de *Nicotiana*"** (Filipe Backes Zatta).
 
-O objetivo do pipeline é processar um mesmo conjunto de leituras sob diferentes combinações de **genoma de referência** e **grupo externo**, mantendo todos os demais parâmetros constantes (inclusive o genotipador, FreeBayes), para medir o efeito dessas escolhas sobre as inferências de estrutura populacional, hibridação e introgressão. O cenário de referência reproduz o pipeline de Couto *et al.* (2026, *Annals of Botany*, doi:[10.1093/aob/mcag083](https://doi.org/10.1093/aob/mcag083)).
+O objetivo do pipeline é processar um mesmo conjunto de leituras em **nove iterações independentes**, que combinam três **referências** e três **grupos externos**, mantendo constantes o genotipador (FreeBayes) e todos os demais parâmetros, para medir o efeito dessas escolhas sobre as inferências de estrutura populacional, hibridação e introgressão. A iteração 1 reproduz o pipeline de Couto *et al.* (2026, *Annals of Botany*, doi:[10.1093/aob/mcag083](https://doi.org/10.1093/aob/mcag083)) e serve de cenário de referência.
 
 > **Estado atual:** a etapa 1 (controle de qualidade e filtragem das leituras) está implementada e funcional. As etapas seguintes estão em desenvolvimento; ver [Estado de implementação](#estado-de-implementação).
 
@@ -27,29 +27,41 @@ O objetivo do pipeline é processar um mesmo conjunto de leituras sob diferentes
 
 ## Delineamento
 
-| Fator | Níveis |
-|---|---|
-| Genoma de referência | *N. langsdorffii* (sect. *Alatae*) · *N. sylvestris* (Sierro *et al.*, 2024; GCF_000393655.2) · *N. benthamiana* (alotetraploide) · *Petunia axillaris* |
-| Grupo externo (testes de introgressão) | *N. bonariensis* (amostras DArTseq) · *N. tomentosiformis* (alelos da montagem genômica) |
+**Amostras:** 24 indivíduos-alvo em delineamento balanceado — *N. alata* Ala16, *N. forgetiana* Forg05, AP01-A (ancestralidade assimétrica) e AP01-B (mistura ~50/50), com 6 indivíduos cada — mais os indivíduos do grupo externo de cada iteração.
 
-Leituras, parâmetros de mapeamento, chamada de variantes (FreeBayes v1.3.6), limiares de qualidade e filtros de SNPs são idênticos entre as combinações. As 4 matrizes de SNPs resultantes (uma por referência) são comparadas com o cenário de referência (*N. sylvestris* + *N. bonariensis*). Outros genotipadores (GATK, BCFtools) poderão ser incorporados como fator adicional em etapa posterior.
+| Iteração | Referência | Genotipador | Grupo externo |
+|---|---|---|---|
+| 1 (cenário de referência) | *N. sylvestris* | FreeBayes | *N. bonariensis* |
+| 2 | *N. sylvestris* | FreeBayes | *N. longiflora* |
+| 3 | *N. sylvestris* | FreeBayes | *N. glauca* |
+| 4 | *de novo* | FreeBayes | *N. bonariensis* |
+| 5 | *de novo* | FreeBayes | *N. longiflora* |
+| 6 | *de novo* | FreeBayes | *N. glauca* |
+| 7 | *Petunia axillaris* | FreeBayes | *N. bonariensis* |
+| 8 | *Petunia axillaris* | FreeBayes | *N. longiflora* |
+| 9 | *Petunia axillaris* | FreeBayes | *N. glauca* |
+
+- **Referências:** *N. sylvestris* (Sierro *et al.*, 2024; RefSeq GCF_000393655.2), *Petunia axillaris* (GenBank) e uma pseudorreferência *de novo* construída a partir das próprias leituras de cada iteração (abordagem dDocent: agrupamento com CD-HIT e mapeamento com BWA-MEM), o que mantém o FreeBayes como genotipador também nesse caso.
+- **Grupos externos:** *N. bonariensis* e *N. longiflora* (sect. *Alatae*) e *N. glauca* (sect. *Noctiflorae*). O grupo externo entra na chamada conjunta de variantes, portanto afeta a iteração inteira, e não apenas os testes de introgressão.
+- **Paralelismo:** cada iteração é um ramo independente do grafo do Snakemake. Apenas as leituras pré-processadas são compartilhadas; mapeamento, chamada, filtragem e análises são executados separadamente, com o mesmo arquivo de configuração.
 
 ```mermaid
 flowchart TD
     A[Leituras DArTseq brutas<br/>FASTQ single-end] --> B[QC e filtragem<br/>FastQC · fastq-stats · fastq-mcf]
-    B --> C{Genoma de referência<br/>BWA-MEM + SAMtools}
-    C --> D[Chamada de variantes conjunta<br/>FreeBayes]
-    D --> E[Filtragem idêntica<br/>VCFtools · pcadapt]
-    E --> F[Escala ampla<br/>PCA · DAPC · ADMIXTURE · FST]
-    E --> G{Grupo externo}
-    G --> H[Escala fina<br/>snapclust · f3 · D · qpAdm]
-    F --> I[Comparação com o cenário de referência]
-    H --> I
+    B --> C[9 iterações em paralelo<br/>3 referências × 3 grupos externos]
+    subgraph P[Pipeline idêntico em cada iteração]
+      D[Obtenção dos locos<br/>BWA-MEM ou pseudorreferência de novo] --> E[Chamada conjunta<br/>FreeBayes · alvo + grupo externo]
+      E --> F[Filtragem<br/>VCFtools · PLINK · pcadapt]
+      F --> G[Estrutura populacional<br/>PCA · STRUCTURE · ADMIXTURE · NeighborNet · Arlequin]
+      G --> H[Híbridos e introgressão<br/>snapclust · NewHybrids · D · fd · HyDe · SNaQ]
+    end
+    C --> D
+    H --> I[Comparação entre iterações<br/>e com o cenário de referência]
 ```
 
 ## Arquitetura
 
-- **Orquestração:** [Snakemake](https://snakemake.readthedocs.io) v7.32.4. O fluxo é descrito como um grafo de dependências entre arquivos (DAG); cada amostra é processada de forma independente e em paralelo.
+- **Orquestração:** [Snakemake](https://snakemake.readthedocs.io) v7.32.4. O fluxo é descrito como um grafo de dependências entre arquivos (DAG); amostras e iterações são processadas de forma independente e em paralelo.
 - **Isolamento de ambiente:** cada regra executa sua ferramenta em um contêiner Docker com versão fixa (imagens BioContainers e StaPH-B). Não é necessário instalar as ferramentas de bioinformática na máquina hospedeira.
 - **Execução do orquestrador:** o próprio Snakemake roda em um contêiner (`snakemake/snakemake:v7.32.4`) com acesso ao socket Docker do hospedeiro (padrão *Docker-outside-of-Docker*), de modo que o pipeline pode ser executado em qualquer máquina com Docker, inclusive Windows (Git Bash) e servidores Linux.
 
@@ -60,11 +72,13 @@ flowchart TD
 | 1. QC das leituras brutas | FastQC, fastq-stats | Implementada |
 | 2. Remoção de adaptadores e filtragem por qualidade (Q30, ≥ 50 pb) | fastq-mcf | Implementada |
 | 3. QC das leituras filtradas e tabela de retenção | FastQC, fastq-stats, Python | Implementada |
-| 4. Download e indexação das referências | NCBI FTP, BWA, SAMtools | Planejada (rascunho em `setup_matrix.sh`) |
-| 5. Mapeamento, ordenação e métricas | BWA-MEM, SAMtools | Planejada |
-| 6. Chamada de variantes | FreeBayes | Planejada |
-| 7. Filtragem de SNPs | VCFtools, BCFtools, pcadapt | Planejada |
-| 8. Análises populacionais e comparação | R (SNPRelate, adegenet, hierfstat, vegan), ADMIXTURE, ADMIXTOOLS 2 | Planejada (`workflow/scripts/plot_pca.R`) |
+| 4. Download e indexação das referências; pseudorreferência *de novo* | NCBI FTP, BWA, SAMtools, CD-HIT | Planejada (rascunho em `setup_matrix.sh`) |
+| 5. Mapeamento, ordenação e métricas (por iteração) | BWA-MEM, SAMtools | Planejada |
+| 6. Chamada conjunta de variantes (por iteração) | FreeBayes | Planejada |
+| 7. Filtragem de SNPs, LD e locos sob seleção | VCFtools, BCFtools, PLINK, pcadapt | Planejada |
+| 8. Estrutura populacional | SNPRelate, STRUCTURE, ADMIXTURE, SplitsTree, Arlequin | Planejada (`workflow/scripts/plot_pca.R`) |
+| 9. Híbridos e introgressão | adegenet (snapclust), NewHybrids, introgress, Dsuite, HyDe, PhyloNetworks (SNaQ), ADMIXTOOLS 2 | Planejada |
+| 10. Comparação entre iterações | R (vegan, pophelper, lme4, emmeans) | Planejada |
 
 ## Requisitos
 
