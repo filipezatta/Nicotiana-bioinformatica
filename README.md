@@ -46,17 +46,18 @@ O objetivo do pipeline é processar um mesmo conjunto de leituras em **nove iter
 - **Paralelismo:** cada iteração é um ramo independente do fluxo do Snakemake. Apenas as leituras pré-processadas são compartilhadas; mapeamento, chamada, filtragem e análises são executados separadamente, com o mesmo arquivo de configuração.
 
 ```mermaid
-flowchart TD
-    A[Leituras DArTseq brutas<br/>FASTQ single-end] --> B[QC e filtragem<br/>FastQC · fastq-stats · fastq-mcf]
-    B --> C[9 iterações em paralelo<br/>3 referências × 3 grupos externos]
-    subgraph P[Pipeline idêntico em cada iteração]
-      D[Obtenção dos locos<br/>BWA-MEM ou de novo (a definir)] --> E[Chamada conjunta<br/>FreeBayes · alvo + grupo externo]
-      E --> F[Filtragem<br/>VCFtools · BCFtools · pcadapt]
-      F --> G[Estrutura populacional<br/>PCA · STRUCTURE · ADMIXTURE · NeighborNet · Arlequin]
-      G --> H[Híbridos e introgressão<br/>snapclust · NewHybrids · D · fd · HyDe · SNaQ]
+flowchart LR
+    A["Leituras DArTseq<br/>FASTQ single-end"] --> B["QC e filtragem<br/>FastQC · fastq-mcf"]
+    B --> C["9 iterações em paralelo<br/>3 referências × 3 grupos externos"]
+    C --> P
+    subgraph P["Pipeline idêntico em cada iteração"]
+      direction LR
+      D["Obtenção dos locos<br/>BWA-MEM ou de novo, a definir"] --> E["Chamada conjunta<br/>FreeBayes"]
+      E --> F["Filtragem<br/>VCFtools · BCFtools · pcadapt"]
+      F --> G["Estrutura populacional<br/>PCA · STRUCTURE · ADMIXTURE<br/>NeighborNet · Arlequin"]
+      G --> H["Híbridos e introgressão<br/>snapclust · NewHybrids · D · fd<br/>HyDe · SNaQ"]
     end
-    C --> D
-    H --> I[Comparação entre iterações<br/>e com o cenário de referência]
+    P --> I["Comparação entre iterações<br/>e com o cenário de referência"]
 ```
 
 ## Arquitetura
